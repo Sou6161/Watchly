@@ -1,0 +1,37 @@
+{
+  "name": "mobile",
+  "version": "0.1.0",
+  "main": "expo-router/entry",
+  "dependencies": {
+    "@watchly/shared": "*",
+    "@expo-google-fonts/dm-serif-display": "^0.4.2",
+    "@expo-google-fonts/inter": "^0.4.2",
+    "expo": "~57.0.4",
+    "expo-constants": "~57.0.3",
+    "expo-font": "~57.0.0",
+    "expo-haptics": "~57.0.0",
+    "expo-linear-gradient": "~57.0.0",
+    "expo-linking": "~57.0.2",
+    "expo-router": "~57.0.4",
+    "expo-secure-store": "~57.0.0",
+    "expo-status-bar": "~57.0.0",
+    "react": "19.2.3",
+    "react-native": "0.86.0",
+    "react-native-gesture-handler": "~2.32.0",
+    "react-native-reanimated": "4.5.0",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "4.25.2"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit"
+  },
+  "private": true
+}

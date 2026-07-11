@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum SessionMode {
+  SAME_DEVICE
+  MULTI_DEVICE
+}
+
+enum SessionStatus {
+  WAITING
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+enum TitleType {
+  MOVIE
+  TV
+}
+
+enum Voter {
+  PERSON_A
+  PERSON_B
+}
+
+enum Decision {
+  YES
+  NO
+  SEEN
+  MAYBE
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  hashedPassword String
+  displayName    String
+  region         String   @default("IN")
+  services       String[] @default([])
+
+  // A saved recurring partner (Feature 6). Self-relation, intentionally not
+  // symmetric: A saving B does not make B save A.
+  partnerId String?
+  partner   User?   @relation("SavedPartner", fields: [partnerId], references: [id], onDelete: SetNull)
+  savedBy   User[]  @relation("SavedPartner")
+
+  // Hash of the current refresh token. Storing it (rather than the raw token)
+  // means a DB leak can't be replayed against /auth/refresh, and nulling it
+  // revokes the session on logout.
+  refreshTokenHash String?
+
+  sessionsAsPersonA Session[] @relation("PersonA")
+  sessionsAsPersonB Session[] @relation("PersonB")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Session {
+  id     String        @id @default(cuid())
+  code   String        @unique
+  mode   SessionMode
+  status SessionStatus @default(WAITING)
+
+  personAId String
+  personA   User   @relation("PersonA", fields: [personAId], references: [id], onDelete: Cascade)
+
+  // Null for SAME_DEVICE (both players share person A's account) and for
+  // MULTI_DEVICE until person B joins via the code.
+  personBId String?
+  personB   User?   @relation("PersonB", fields: [personBId], references: [id], onDelete: SetNull)
+
+  // Display names shown on the swipe/results screens. For same-device these are
+  // the two names typed at session start; person B has no account there.
+  personALabel String @default("Person A")
+  personBLabel String @default("Person B")
+
+  region   String
+  services String[] @default([])
+
+  // Filters chosen at session start.
+  mood        String?
+  maxRuntime  Int?
+
+  // Ordered TMDB-backed Title ids. Frozen at creation so both people swipe the
+  // exact same titles in the exact same order.
+  titleQueue String[] @default([])
+
+  votes Vote[]
+
+  // Drives the 30-minute abandonment sweep (Feature 4).
+  lastActivityAt DateTime @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, lastActivityAt])
+  @@index([personAId])
+  @@index([personBId])
+}
+
+model Title {
+  id     String    @id @default(cuid())
+  tmdbId Int
+  type   TitleType
+
+  title           String
+  posterUrl       String?
+  trailerYoutubeId String
+  genres          String[] @default([])
+  releaseYear     Int?
+  runtime         Int?
+  rating          Float?
+  overview        String?
+  language        String?
+
+  // TMDB watch providers, keyed by region:
+  //   { "IN": { "flatrate": ["netflix", "hotstar"] }, "US": { ... } }
+  // Stored as our internal service ids, not TMDB provider ids, so the queue
+  // filter can match User.services directly.
+  watchProviders Json @default("{}")
+
+  popularity Float @default(0)
+  cachedAt   DateTime @default(now())
+
+  votes Vote[]
+
+  // TMDB ids are only unique within a media type — movie 550 and TV 550 are
+  // different shows.
+  @@unique([tmdbId, type])
+  @@index([popularity])
+}
+
+model Vote {
+  id String @id @default(cuid())
+
+  sessionId String
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  titleId String
+  title   Title  @relation(fields: [titleId], references: [id], onDelete: Cascade)
+
+  voter    Voter
+  decision Decision
+
+  createdAt DateTime @default(now())
+
+  @@unique([sessionId, titleId, voter])
+  @@index([sessionId])
+  // Powers "don't show titles swiped in the last 30 days".
+  @@index([titleId, createdAt])
+}

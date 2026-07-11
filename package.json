@@ -1,0 +1,17 @@
+{
+  "name": "watchly",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "api": "npm run dev --workspace=@watchly/api",
+    "mobile": "npm run start --workspace=mobile",
+    "shared:build": "npm run build --workspace=@watchly/shared",
+    "db:push": "npm run db:push --workspace=@watchly/api",
+    "db:studio": "npm run db:studio --workspace=@watchly/api",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}
