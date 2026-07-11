@@ -20,6 +20,10 @@ const schema = z.object({
 
   // Used from Feature 2 onward; optional so Feature 1 boots without it.
   TMDB_API_KEY: z.string().optional(),
+
+  // Shared secret for the nightly catalog-sync trigger. Without it,
+  // /internal/sync-catalog refuses to run rather than sitting open.
+  CRON_SECRET: z.string().min(16).optional(),
 });
 
 const parsed = schema.safeParse(process.env);

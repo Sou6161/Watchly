@@ -2,14 +2,15 @@ import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { REGIONS, servicesForRegion, type Region } from '@watchly/shared';
 import { Button, Chip, FormError, Heading, Screen, Subheading } from '../src/components/ui';
-import { useAuth } from '../src/lib/auth-context';
+import { useAuthStore, useUser } from '../src/stores/auth';
 import { ApiError } from '../src/lib/api';
 import { colors, spacing, type } from '../src/theme';
 
 const REGION_LABELS: Record<Region, string> = { IN: '🇮🇳  India', US: '🇺🇸  United States' };
 
 export default function Onboarding() {
-  const { user, updateMe } = useAuth();
+  const user = useUser();
+  const updateMe = useAuthStore((s) => s.updateMe);
   const [region, setRegion] = useState<Region>(user?.region ?? 'IN');
   const [selected, setSelected] = useState<string[]>(user?.services ?? []);
   const [error, setError] = useState('');

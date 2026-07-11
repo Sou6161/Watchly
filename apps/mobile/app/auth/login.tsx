@@ -2,12 +2,12 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Link } from 'expo-router';
 import { Button, Field, FormError, Heading, Screen, Subheading } from '../../src/components/ui';
-import { useAuth } from '../../src/lib/auth-context';
+import { useAuthStore } from '../../src/stores/auth';
 import { ApiError } from '../../src/lib/api';
 import { colors, spacing, type } from '../../src/theme';
 
 export default function Login() {
-  const { login } = useAuth();
+  const login = useAuthStore((s) => s.login);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');

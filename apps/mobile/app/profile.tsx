@@ -3,14 +3,16 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { REGIONS, servicesForRegion, type Region } from '@watchly/shared';
 import { Button, Chip, FormError, Heading, Screen } from '../src/components/ui';
-import { useAuth } from '../src/lib/auth-context';
+import { useAuthStore, useUser } from '../src/stores/auth';
 import { ApiError } from '../src/lib/api';
 import { colors, spacing, type } from '../src/theme';
 
 const REGION_LABELS: Record<Region, string> = { IN: '🇮🇳  India', US: '🇺🇸  United States' };
 
 export default function Profile() {
-  const { user, updateMe, logout } = useAuth();
+  const user = useUser();
+  const updateMe = useAuthStore((s) => s.updateMe);
+  const logout = useAuthStore((s) => s.logout);
   const router = useRouter();
 
   const [region, setRegion] = useState<Region>(user?.region ?? 'IN');

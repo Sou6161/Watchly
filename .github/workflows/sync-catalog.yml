@@ -1,0 +1,45 @@
+name: Nightly catalog sync
+
+# 03:30 IST (22:00 UTC) — the app's quietest hour, and TMDB is least busy.
+on:
+  schedule:
+    - cron: '0 22 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger catalog sync
+        env:
+          API_URL: ${{ secrets.API_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          # Render's free tier sleeps after ~15 min idle and takes ~50s to wake,
+          # so the first request can time out purely from the cold start. Retry
+          # a few times before treating it as a real failure.
+          for attempt in 1 2 3 4 5; do
+            code=$(curl -s -o /tmp/body.txt -w '%{http_code}' --max-time 120 \
+              -X POST "$API_URL/internal/sync-catalog" \
+              -H "x-cron-secret: $CRON_SECRET") && true
+
+            echo "attempt $attempt -> HTTP $code"
+            cat /tmp/body.txt; echo
+
+            # 202 = accepted and running. 409 = already running, also fine.
+            if [ "$code" = "202" ] || [ "$code" = "409" ]; then
+              exit 0
+            fi
+
+            # A bad secret or missing config will never succeed — fail fast
+            # instead of burning five attempts on it.
+            if [ "$code" = "401" ] || [ "$code" = "503" ]; then
+              echo "::error::Sync rejected (HTTP $code). Check CRON_SECRET on both sides."
+              exit 1
+            fi
+
+            sleep 30
+          done
+
+          echo "::error::Could not reach the API after 5 attempts."
+          exit 1

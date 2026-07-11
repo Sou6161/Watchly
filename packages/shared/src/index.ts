@@ -55,16 +55,22 @@ export const DEFAULT_REGION: Region = 'IN';
  * The streaming services a user can subscribe to.
  *
  * `id` is our stable internal key (what we persist on User.services and
- * Session.services). `tmdbProviderId` is TMDB's id for the same service — the
- * join key when we read watch providers off a title. Deep links are wired up in
- * Feature 5; `androidPackage` / `iosScheme` are here so the catalog stays the
- * single source of truth for a service rather than getting split across files.
+ * Session.services).
+ *
+ * `tmdbProviderIds` is keyed BY REGION, not a single number — TMDB assigns the
+ * same service different provider ids in different territories (Prime Video is
+ * 119 in India but 9 in the US). A service is offered in exactly the regions
+ * this map has keys for, so there's no separate `regions` list to fall out of
+ * sync with it. All ids below were verified against the live TMDB
+ * /watch/providers endpoint (`npm run tmdb:providers -w @watchly/api`).
+ *
+ * Deep links are wired up in Feature 5; `androidPackage` / `iosScheme` live here
+ * so a service is defined in exactly one place.
  */
 export interface StreamingService {
   id: string;
   label: string;
-  tmdbProviderId: number;
-  regions: Region[];
+  tmdbProviderIds: Partial<Record<Region, number>>;
   androidPackage: string;
   iosScheme: string;
   /** Brand colour, used for the service chips and result-card logos. */
@@ -75,8 +81,7 @@ export const STREAMING_SERVICES: StreamingService[] = [
   {
     id: 'netflix',
     label: 'Netflix',
-    tmdbProviderId: 8,
-    regions: ['IN', 'US'],
+    tmdbProviderIds: { IN: 8, US: 8 },
     androidPackage: 'com.netflix.mediaclient',
     iosScheme: 'nflx://',
     color: '#E50914',
@@ -84,35 +89,26 @@ export const STREAMING_SERVICES: StreamingService[] = [
   {
     id: 'prime',
     label: 'Prime Video',
-    tmdbProviderId: 119,
-    regions: ['IN', 'US'],
+    tmdbProviderIds: { IN: 119, US: 9 },
     androidPackage: 'com.amazon.avod.thirdpartyclient',
     iosScheme: 'aiv://',
     color: '#00A8E1',
   },
   {
+    // Hotstar and JioCinema merged into a single service (JioHotstar) in 2025.
+    // TMDB reflects that: there is no JioCinema provider in IN any more, and the
+    // old Hotstar id (122) is gone. This one entry is both.
     id: 'hotstar',
     label: 'JioHotstar',
-    tmdbProviderId: 122,
-    regions: ['IN'],
+    tmdbProviderIds: { IN: 2336 },
     androidPackage: 'in.startv.hotstar',
     iosScheme: 'hotstar://',
     color: '#1F80E0',
   },
   {
-    id: 'jiocinema',
-    label: 'JioCinema',
-    tmdbProviderId: 970,
-    regions: ['IN'],
-    androidPackage: 'com.jio.media.ondemand',
-    iosScheme: 'jiocinema://',
-    color: '#8A2BE2',
-  },
-  {
     id: 'sonyliv',
     label: 'Sony LIV',
-    tmdbProviderId: 237,
-    regions: ['IN'],
+    tmdbProviderIds: { IN: 237 },
     androidPackage: 'com.sonyliv',
     iosScheme: 'sonyliv://',
     color: '#F26522',
@@ -120,8 +116,7 @@ export const STREAMING_SERVICES: StreamingService[] = [
   {
     id: 'zee5',
     label: 'ZEE5',
-    tmdbProviderId: 232,
-    regions: ['IN'],
+    tmdbProviderIds: { IN: 232 },
     androidPackage: 'com.graymatrix.did',
     iosScheme: 'zee5://',
     color: '#8230C6',
@@ -129,8 +124,7 @@ export const STREAMING_SERVICES: StreamingService[] = [
   {
     id: 'appletv',
     label: 'Apple TV+',
-    tmdbProviderId: 350,
-    regions: ['IN', 'US'],
+    tmdbProviderIds: { IN: 350, US: 350 },
     androidPackage: 'com.apple.atve.androidtv.appletv',
     iosScheme: 'videos://',
     color: '#B0B0B0',
@@ -138,8 +132,7 @@ export const STREAMING_SERVICES: StreamingService[] = [
   {
     id: 'disneyplus',
     label: 'Disney+',
-    tmdbProviderId: 337,
-    regions: ['US'],
+    tmdbProviderIds: { US: 337 },
     androidPackage: 'com.disney.disneyplus',
     iosScheme: 'disneyplus://',
     color: '#113CCF',
@@ -149,12 +142,55 @@ export const STREAMING_SERVICES: StreamingService[] = [
 export const SERVICE_IDS = STREAMING_SERVICES.map((s) => s.id);
 
 export function servicesForRegion(region: Region): StreamingService[] {
-  return STREAMING_SERVICES.filter((s) => s.regions.includes(region));
+  return STREAMING_SERVICES.filter((s) => s.tmdbProviderIds[region] !== undefined);
 }
 
 export function serviceById(id: string): StreamingService | undefined {
   return STREAMING_SERVICES.find((s) => s.id === id);
 }
+
+/* ----------------------------------------------------------------- moods */
+
+/**
+ * Session mood filters. Each maps to a set of TMDB genre names, matched against
+ * the genres we cached on Title. Genre *names* rather than TMDB's numeric ids
+ * because movie and TV use different id spaces for the same genre — names are
+ * the only thing that joins cleanly across both.
+ */
+export interface Mood {
+  id: string;
+  label: string;
+  emoji: string;
+  genres: string[];
+}
+
+export const MOODS: Mood[] = [
+  { id: 'funny', label: 'Make us laugh', emoji: '😂', genres: ['Comedy'] },
+  { id: 'thrilling', label: 'Keep us on edge', emoji: '😰', genres: ['Thriller', 'Mystery', 'Crime'] },
+  { id: 'romantic', label: 'Something tender', emoji: '💘', genres: ['Romance', 'Drama'] },
+  { id: 'action', label: 'Blow something up', emoji: '💥', genres: ['Action', 'Adventure'] },
+  { id: 'scary', label: 'Scare us', emoji: '👻', genres: ['Horror'] },
+  { id: 'mindbending', label: 'Mess with our heads', emoji: '🌀', genres: ['Science Fiction', 'Mystery', 'Fantasy'] },
+];
+
+export const MOOD_IDS = MOODS.map((m) => m.id);
+
+export function moodById(id: string): Mood | undefined {
+  return MOODS.find((m) => m.id === id);
+}
+
+/** Duration filters, in minutes. `null` max = no upper bound. */
+export const DURATION_FILTERS = [
+  { id: 'short', label: 'Under 100 min', maxRuntime: 100 },
+  { id: 'medium', label: 'Under 2 hours', maxRuntime: 120 },
+  { id: 'any', label: 'Any length', maxRuntime: null },
+] as const;
+
+/** How many titles each person swipes in a session. */
+export const SESSION_QUEUE_SIZE = 15;
+
+/** Don't re-show a title the user swiped on within this window. */
+export const RECENT_SWIPE_EXCLUSION_DAYS = 30;
 
 /* ------------------------------------------------------------- api types */
 
@@ -212,3 +248,63 @@ export interface ApiErrorBody {
 }
 
 export const PASSWORD_MIN_LENGTH = 8;
+
+/* ------------------------------------------------------- realtime (Socket.io) */
+
+/**
+ * Multi-device sync. Typed on both ends so an event rename can't silently break
+ * one side — Socket.io would otherwise just deliver nothing, forever, quietly.
+ *
+ * Deliberately, no event carries a vote *decision*. Neither person may see what
+ * the other picked until the results screen; leaking it over the wire would make
+ * the whole mechanic pointless, and "the client just won't render it" is not a
+ * guarantee worth relying on.
+ */
+
+/** How far each person has got through the deck. */
+export interface SessionProgressPayload {
+  total: number;
+  personA: number;
+  personB: number;
+  personADone: boolean;
+  personBDone: boolean;
+  bothDone: boolean;
+}
+
+/** Server -> client. */
+export interface ServerToClientEvents {
+  /** Person B has joined; person A can stop waiting and start swiping. */
+  'session:joined': (data: {
+    personALabel: string;
+    personBLabel: string;
+    /** Both phones deal from this exact list, in this exact order. */
+    titleIds: string[];
+  }) => void;
+
+  /** Someone swiped. Count only — never the decision. */
+  'vote:submitted': (data: { progress: SessionProgressPayload }) => void;
+
+  /** Both people finished the deck. Both phones navigate to results together. */
+  'session:completed': (data: { progress: SessionProgressPayload }) => void;
+
+  /** The other person dropped off (backgrounded the app, lost signal). */
+  'partner:disconnected': () => void;
+  'partner:reconnected': () => void;
+
+  /** Session was abandoned (30 minutes idle) and can no longer be resumed. */
+  'session:abandoned': () => void;
+
+  'error:message': (data: { message: string }) => void;
+}
+
+/** Client -> server. */
+export interface ClientToServerEvents {
+  /** Enter the session's room. Ack tells the caller which side they are. */
+  'session:join': (
+    data: { sessionId: string },
+    ack: (res: { ok: true; voter: Voter } | { ok: false; message: string }) => void,
+  ) => void;
+}
+
+/** Sessions idle longer than this are auto-abandoned, and reconnects refused. */
+export const SESSION_IDLE_TIMEOUT_MINUTES = 30;

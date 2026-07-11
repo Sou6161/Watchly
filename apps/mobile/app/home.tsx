@@ -1,12 +1,13 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { serviceById } from '@watchly/shared';
 import { Button, Heading, Screen, Subheading } from '../src/components/ui';
-import { useAuth } from '../src/lib/auth-context';
+import { useUser } from '../src/stores/auth';
 import { colors, radii, spacing, type } from '../src/theme';
 
 export default function Home() {
-  const { user } = useAuth();
+  const router = useRouter();
+  const user = useUser();
   if (!user) return null;
 
   const services = user.services.map(serviceById).filter((s) => s !== undefined);
@@ -36,10 +37,20 @@ export default function Home() {
       </View>
 
       <View style={s.actions}>
-        {/* Wired up in Feature 3 (same-device) and Feature 4 (multi-device). */}
-        <Button label="Start a session" onPress={() => {}} disabled />
-        <Button label="Join a session" onPress={() => {}} variant="ghost" disabled />
-        <Text style={s.soon}>Sessions land next — catalog sync is up first.</Text>
+        <Button
+          label="Together on this phone"
+          onPress={() => router.push('/session/new?mode=SAME_DEVICE')}
+        />
+        <Button
+          label="On separate phones"
+          onPress={() => router.push('/session/new?mode=MULTI_DEVICE')}
+          variant="ghost"
+        />
+        <Button
+          label="Join with a code"
+          onPress={() => router.push('/session/join')}
+          variant="ghost"
+        />
       </View>
     </Screen>
   );
@@ -62,5 +73,4 @@ const s = StyleSheet.create({
   dot: { width: 8, height: 8, borderRadius: 4 },
   serviceLabel: { ...type.caption, color: colors.textMuted },
   actions: { gap: spacing.md, paddingBottom: spacing.md },
-  soon: { ...type.caption, color: colors.textFaint, textAlign: 'center' },
 });

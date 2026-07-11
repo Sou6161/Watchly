@@ -6,6 +6,12 @@
     "apps/*",
     "packages/*"
   ],
+  "//overrides": "Pinned, not ranged. React must be the exact version react-native's renderer was built against (RN 0.81 -> 19.1.0), or the app dies with 'Incompatible React versions'. react-native-worklets must be the exact version Expo Go's native binary ships (SDK 54 -> 0.5.1, per expo/bundledNativeModules.json); reanimated declares it as a PEER with range '0.5 - 0.8', so npm otherwise installs 0.8.x and the JS/native ABI mismatch surfaces as 'installTurboModule called with 1 arguments'. Bump these only in lockstep with the Expo SDK.",
+  "overrides": {
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native-worklets": "0.5.1"
+  },
   "scripts": {
     "api": "npm run dev --workspace=@watchly/api",
     "mobile": "npm run start --workspace=mobile",

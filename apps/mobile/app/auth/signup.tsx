@@ -3,12 +3,12 @@ import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } fro
 import { Link } from 'expo-router';
 import { PASSWORD_MIN_LENGTH } from '@watchly/shared';
 import { Button, Field, FormError, Heading, Screen, Subheading } from '../../src/components/ui';
-import { useAuth } from '../../src/lib/auth-context';
+import { useAuthStore } from '../../src/stores/auth';
 import { ApiError } from '../../src/lib/api';
 import { colors, spacing, type } from '../../src/theme';
 
 export default function Signup() {
-  const { signup } = useAuth();
+  const signup = useAuthStore((s) => s.signup);
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

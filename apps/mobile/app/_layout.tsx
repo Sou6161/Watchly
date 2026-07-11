@@ -5,7 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFonts, DMSerifDisplay_400Regular } from '@expo-google-fonts/dm-serif-display';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
-import { AuthProvider, useAuth } from '../src/lib/auth-context';
+import { useAuthLoading, useAuthStore, useUser } from '../src/stores/auth';
 import { colors } from '../src/theme';
 
 /**
@@ -14,7 +14,8 @@ import { colors } from '../src/theme';
  * signed-out user linger on /home after their refresh token expires.
  */
 function useProtectedRoute() {
-  const { user, loading } = useAuth();
+  const user = useUser();
+  const loading = useAuthLoading();
   const segments = useSegments();
   const router = useRouter();
 
@@ -42,17 +43,21 @@ function useProtectedRoute() {
 }
 
 function RootNavigator() {
-  const { loading } = useAuth();
+  const restore = useAuthStore((s) => s.restore);
+
+  // Resume an existing session on cold start.
+  useEffect(() => {
+    restore();
+  }, [restore]);
+
   useProtectedRoute();
 
-  if (loading) {
-    return (
-      <View style={s.boot}>
-        <ActivityIndicator color={colors.red} />
-      </View>
-    );
-  }
-
+  // The Stack is ALWAYS mounted — never swapped out for a loading view. Returning
+  // a spinner here instead would leave the navigator unmounted, and expo-router
+  // silently discards any router.replace() issued before it mounts. That made the
+  // redirect off the index route a no-op and left the app sitting on a blank
+  // screen with nothing logged. The loading state belongs on the index route
+  // (which renders a spinner), not in place of the navigator.
   return (
     <Stack
       screenOptions={{
@@ -72,17 +77,23 @@ export default function RootLayout() {
     Inter_600SemiBold,
   });
 
-  // Render nothing rather than flash system-font text that reflows once the real
-  // fonts land. fontError still lets us through — shipping the app in a fallback
-  // font beats a permanently blank screen.
-  if (!fontsLoaded && !fontError) return <View style={s.boot} />;
+  // Hold rather than flash system-font text that reflows once the real fonts
+  // land. fontError still lets us through — shipping in a fallback font beats a
+  // permanently blank screen. The spinner matters: an empty View here is
+  // indistinguishable from a crash, which is exactly how the last blank-screen
+  // bug managed to hide.
+  if (!fontsLoaded && !fontError) {
+    return (
+      <View style={s.boot}>
+        <ActivityIndicator color={colors.red} />
+      </View>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={s.flex}>
-      <AuthProvider>
-        <StatusBar style="light" />
-        <RootNavigator />
-      </AuthProvider>
+      <StatusBar style="light" />
+      <RootNavigator />
     </GestureHandlerRootView>
   );
 }

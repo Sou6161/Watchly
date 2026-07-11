@@ -5,6 +5,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "sync": "tsx src/jobs/sync-catalog.ts",
+    "tmdb:providers": "tsx src/scripts/check-providers.ts",
     "build": "prisma generate && tsc -p tsconfig.json",
     "start": "node dist/apps/api/src/index.js",
     "typecheck": "tsc --noEmit",
@@ -21,6 +23,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
+    "socket.io": "^4.8.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {
