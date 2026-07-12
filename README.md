@@ -34,6 +34,27 @@ npm run api      # :4000
 npm run mobile   # Expo
 ```
 
+## Tests
+
+```bash
+createdb watchly_test                      # once
+npm run db:deploy -w @watchly/api          # once, with DATABASE_URL=…watchly_test
+npm test
+```
+
+26 integration tests, run against a **real Postgres** rather than mocks — the logic
+worth testing (the jsonb provider filter, the 30-day exclusion, mutual-YES
+matching) lives in SQL and in Prisma's constraints, so mocking the database would
+only test the mocks. The suite refuses to run unless the database name contains
+"test", because it truncates every table.
+
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs these plus a real
+Metro bundle of the app on every push. The bundle step is the one that earns its
+keep: the worst bugs in this project — a duplicate React hoisted to the workspace
+root, a `react-native-worklets` build whose native ABI didn't match Expo Go's, a
+Metro resolver that couldn't see nested `node_modules` — all typechecked perfectly
+and only died at bundle time.
+
 Testing on a **physical device**: `localhost` points at the phone, not your Mac.
 Set `EXPO_PUBLIC_API_URL` in `apps/mobile/.env` to your machine's LAN address
 (e.g. `http://192.168.1.5:4000`).
@@ -74,7 +95,44 @@ would never fire at 3am on a sleeping instance. Instead
 which both wakes the instance and runs the job. Needs `API_URL` and `CRON_SECRET`
 as GitHub Actions secrets, with `CRON_SECRET` matching the API's env.
 
+## Sessions
+
+Same-device (pass the phone) and multi-device (Socket.io) both work. The title
+queue is built **once**, at session creation, and frozen: both people must swipe
+the same titles in the same order, and rebuilding it per request would reshuffle
+and desync them.
+
+Votes go over REST, not the socket — a vote must persist even if the socket is
+down. The socket only *notifies*. That's why a disconnect costs nothing: the
+votes are already in Postgres, and reconnecting resumes exactly where you left
+off. No socket event ever carries a vote *decision*, only counts; leaking one
+would quietly destroy the no-bias mechanic.
+
+The **server** closes a session when the last vote lands. If completion were left
+to whoever finishes second, their app dying on the final swipe would strand both
+people's votes forever. Sessions idle for 30 minutes are auto-abandoned.
+
+## Deploying
+
+See [docs/DEPLOY.md](docs/DEPLOY.md) and [docs/STORE.md](docs/STORE.md).
+
 ## Build status
 
-Features 1 (auth + onboarding) and 2 (catalog sync + queue) are done. Features
-3–7 (swipe, multi-device, results, history, polish) are not built yet.
+All seven features are built. Verified end-to-end against a real Postgres and
+real Socket.io clients: auth + refresh rotation, catalog sync (~4,000 titles),
+queue filtering and the 30-day exclusion, session/vote/match logic, multi-device
+sync, history, and saved partners. The production build boots and serves.
+
+**Not yet verified, and you can't skip these:**
+
+- **The swipe feel.** Gesture physics, haptics, card springs — written, tuned by
+  eye, never felt on a device by anyone but you.
+- **Streaming deep links.** These *cannot* work in Expo Go: the
+  `LSApplicationQueriesSchemes` / `queries` entries compile into your app's
+  manifest, and in Expo Go your JS runs inside Expo Go's binary with Expo Go's
+  manifest. `canOpenURL` returns false and every "Play on Netflix" falls through
+  to a web search, even with Netflix installed. **Needs a dev build, on a real
+  phone.** The spec is blunt that the product fails on its punchline if these
+  don't open.
+- **Two-phone multi-device.** The backend is verified with two socket clients;
+  two actual phones is a different test.

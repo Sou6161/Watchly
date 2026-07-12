@@ -5,7 +5,7 @@ import { REGIONS, servicesForRegion, type Region } from '@watchly/shared';
 import { Button, Chip, FormError, Heading, Screen } from '../src/components/ui';
 import { useAuthStore, useUser } from '../src/stores/auth';
 import { ApiError } from '../src/lib/api';
-import { colors, spacing, type } from '../src/theme';
+import { colors, radii, spacing, type } from '../src/theme';
 
 const REGION_LABELS: Record<Region, string> = { IN: '🇮🇳  India', US: '🇺🇸  United States' };
 
@@ -94,7 +94,26 @@ export default function Profile() {
           ))}
         </View>
 
-        {/* Saved partners land in Feature 6. */}
+        {user.partner && (
+          <>
+            <Text style={s.sectionLabel}>Saved partner</Text>
+            <View style={s.partnerRow}>
+              <View style={s.avatar}>
+                <Text style={s.avatarText}>
+                  {user.partner.displayName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <Text style={s.partnerName}>{user.partner.displayName}</Text>
+              <Pressable
+                hitSlop={8}
+                onPress={() => updateMe({ partnerId: null })}
+                style={({ pressed }) => pressed && s.pressed}
+              >
+                <Text style={s.removeText}>Remove</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
       </ScrollView>
 
       <View style={s.footer}>
@@ -123,6 +142,29 @@ const s = StyleSheet.create({
     marginTop: spacing.xl,
   },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  partnerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: '#241640',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.red,
+  },
+  avatarText: { ...type.button, color: colors.text },
+  partnerName: { ...type.body, color: colors.text, flex: 1 },
+  removeText: { ...type.caption, color: colors.danger },
+  pressed: { opacity: 0.7 },
+
   footer: { gap: spacing.sm, paddingBottom: spacing.md },
   saved: { ...type.caption, color: colors.gold, textAlign: 'center' },
 });

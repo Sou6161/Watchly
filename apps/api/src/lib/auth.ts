@@ -113,8 +113,26 @@ export function revokeRefreshToken(userId: string) {
   });
 }
 
-/** Strips the password hash and refresh hash before a user ever hits the wire. */
-export function toPublicUser(user: User): PublicUser {
+/**
+ * Strips the password hash and refresh hash before a user ever hits the wire,
+ * and resolves the saved partner's name.
+ *
+ * Async because of that lookup. It's one indexed query on a row we usually
+ * don't have, and it only fires when a partner is actually saved — cheaper than
+ * an unconditional join on every /api/me, and far cheaper than giving the client
+ * a way to look up arbitrary users by id.
+ */
+export async function toPublicUser(user: User): Promise<PublicUser> {
+  let partner: PublicUser['partner'] = null;
+
+  if (user.partnerId) {
+    const row = await prisma.user.findUnique({
+      where: { id: user.partnerId },
+      select: { id: true, displayName: true },
+    });
+    partner = row ?? null;
+  }
+
   return {
     id: user.id,
     email: user.email,
@@ -122,6 +140,7 @@ export function toPublicUser(user: User): PublicUser {
     region: user.region as Region,
     services: user.services,
     partnerId: user.partnerId,
+    partner,
     onboarded: user.services.length > 0,
     createdAt: user.createdAt.toISOString(),
   };

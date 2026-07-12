@@ -1,0 +1,49 @@
+services:
+  - type: web
+    name: watchly-api
+    runtime: node
+    plan: free
+    region: singapore # Closest Render region to the India-first user base.
+
+    # Built from the repo root, not apps/api: the API imports @watchly/shared as a
+    # workspace package, so npm has to install from the workspace root or the
+    # import can't resolve.
+    #
+    # `migrate deploy` (not `db push`) applies the committed migrations. It only
+    # ever moves forward and never drops data — `db push` can, which is why it
+    # stays a local-development tool. It runs at build, before the new instance
+    # takes traffic, so the schema is always ahead of the code that needs it.
+    buildCommand: >-
+      npm ci &&
+      npm run db:deploy --workspace=@watchly/api &&
+      npm run build --workspace=@watchly/api
+
+    startCommand: npm run start --workspace=@watchly/api
+
+    healthCheckPath: /health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # PORT is NOT declared here. Render injects it into every web service, and
+      # env.ts reads it (defaulting to 4000 locally). Declaring it via fromService
+      # would be a self-reference — the service pointing at its own port.
+
+      # Set these in the Render dashboard — never in this file, which is committed.
+      - key: DATABASE_URL
+        sync: false # Neon POOLED connection string
+      - key: DIRECT_URL
+        sync: false # Neon UNPOOLED — Prisma migrations need it
+      - key: TMDB_API_KEY
+        sync: false
+
+      # Generated once, then stored. Rotating either logs everyone out.
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+
+      # Must match the GitHub Actions secret of the same name.
+      - key: CRON_SECRET
+        sync: false

@@ -49,3 +49,11 @@ export interface SessionProgress {
   personBDone: boolean;
   bothDone: boolean;
 }
+
+export interface ResultsResponse {
+  session: PublicSession;
+  matches: PublicTitle[];
+  progress: SessionProgress;
+  /** The other person's account id. Null for same-device — no account to save. */
+  partnerUserId: string | null;
+}

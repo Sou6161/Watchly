@@ -12,7 +12,8 @@ import {
 import { prisma } from '../lib/prisma.js';
 import { ApiError, wrap } from '../lib/errors.js';
 import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js';
-import { buildQueue, type QueueFilters } from '../lib/queue.js';
+import type { QueueFilters } from '../lib/queue.js';
+import { ensureQueue } from '../lib/catalog.js';
 
 export const titlesRouter = Router();
 
@@ -70,7 +71,7 @@ titlesRouter.get(
       limit: q.limit,
     };
 
-    const titles = await buildQueue(prisma, filters, [me.id]);
+    const titles = await ensureQueue(prisma, filters, [me.id]);
 
     res.json({
       titles: titles.map(toPublicTitle),

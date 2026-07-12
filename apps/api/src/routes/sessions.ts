@@ -8,13 +8,14 @@ import {
   SESSION_QUEUE_SIZE,
   moodById,
   type Region,
+  type SessionSummary,
 } from '@watchly/shared';
 import { prisma } from '../lib/prisma.js';
 import { ApiError, wrap } from '../lib/errors.js';
 import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js';
 import { parseBody } from '../lib/validate.js';
 import { generateSessionCode } from '../lib/code.js';
-import { buildQueue } from '../lib/queue.js';
+import { ensureQueue } from '../lib/catalog.js';
 import { toPublicTitle } from './titles.js';
 import { emitSessionCompleted, emitSessionJoined, emitVoteSubmitted } from '../realtime.js';
 
@@ -53,7 +54,9 @@ sessionsRouter.post(
       throw ApiError.badRequest('Pick at least one streaming service first.');
     }
 
-    const titles = await buildQueue(
+    // Fetches from TMDB and caches on the fly if the local catalogue can't
+    // already satisfy these filters.
+    const titles = await ensureQueue(
       prisma,
       {
         region,
@@ -91,6 +94,98 @@ sessionsRouter.post(
     });
 
     res.status(201).json({ session: toPublicSession(session), titles: titles.map(toPublicTitle) });
+  }),
+);
+
+/**
+ * GET /api/sessions — the caller's recent sessions, newest first.
+ *
+ * Computing match counts by pulling every vote for every session would be N+1 in
+ * the worst place (the home screen, on every launch). Instead one grouped query
+ * gets the YES votes for all the sessions at once, and matches are counted in
+ * memory — a match is a title both people said YES to, so it's just the titles
+ * whose YES count is 2.
+ */
+sessionsRouter.get(
+  '/',
+  wrap(async (req, res) => {
+    const me = (req as AuthedRequest).user;
+    const limit = Math.min(Number(req.query.limit ?? 5) || 5, 20);
+
+    const sessions = await prisma.session.findMany({
+      where: {
+        OR: [{ personAId: me.id }, { personBId: me.id }],
+        status: 'COMPLETED',
+      },
+      orderBy: { completedAt: 'desc' },
+      take: limit,
+    });
+
+    if (sessions.length === 0) {
+      res.json({ sessions: [] });
+      return;
+    }
+
+    const ids = sessions.map((s) => s.id);
+
+    const yesVotes = await prisma.vote.findMany({
+      where: { sessionId: { in: ids }, decision: 'YES' },
+      select: { sessionId: true, titleId: true, voter: true },
+    });
+
+    // sessionId -> titleId -> set of voters who said yes.
+    const bySession = new Map<string, Map<string, Set<string>>>();
+    for (const v of yesVotes) {
+      const titles = bySession.get(v.sessionId) ?? new Map<string, Set<string>>();
+      const voters = titles.get(v.titleId) ?? new Set<string>();
+      voters.add(v.voter);
+      titles.set(v.titleId, voters);
+      bySession.set(v.sessionId, titles);
+    }
+
+    const matchedTitleIds = new Map<string, string[]>();
+    for (const [sessionId, titles] of bySession) {
+      matchedTitleIds.set(
+        sessionId,
+        [...titles.entries()]
+          .filter(([, voters]) => voters.has('PERSON_A') && voters.has('PERSON_B'))
+          .map(([titleId]) => titleId),
+      );
+    }
+
+    // One more query for the posters of everything matched, across all sessions.
+    const allMatched = [...matchedTitleIds.values()].flat();
+    const posters = new Map<string, string | null>();
+    if (allMatched.length > 0) {
+      const rows = await prisma.title.findMany({
+        where: { id: { in: allMatched } },
+        select: { id: true, posterUrl: true },
+      });
+      for (const r of rows) posters.set(r.id, r.posterUrl);
+    }
+
+    const summaries: SessionSummary[] = sessions.map((s) => {
+      const matched = matchedTitleIds.get(s.id) ?? [];
+      const iAmA = s.personAId === me.id;
+
+      return {
+        id: s.id,
+        mode: s.mode,
+        status: s.status,
+        // "The other person", from whichever side the caller was on.
+        partnerLabel: iAmA ? s.personBLabel : s.personALabel,
+        matchCount: matched.length,
+        matchPosters: matched
+          .map((id) => posters.get(id))
+          .filter((p): p is string => typeof p === 'string')
+          .slice(0, 3),
+        mood: s.mood,
+        createdAt: s.createdAt.toISOString(),
+        completedAt: s.completedAt?.toISOString() ?? null,
+      };
+    });
+
+    res.json({ sessions: summaries });
   }),
 );
 
@@ -299,10 +394,25 @@ sessionsRouter.get(
       .filter((id) => byId.has(id))
       .map((id) => byId.get(id)!);
 
+    /**
+     * The other person's account id, so the results screen can offer "Save
+     * partner". Null for same-device sessions — the second player there is just
+     * a name typed on this phone, not an account, so there is nobody to save.
+     * Computed per-caller rather than baked into toPublicSession, which has no
+     * idea who is asking.
+     */
+    const partnerUserId =
+      session.mode === 'MULTI_DEVICE'
+        ? session.personAId === me.id
+          ? session.personBId
+          : session.personAId
+        : null;
+
     res.json({
       session: toPublicSession(session),
       matches: ordered.map(toPublicTitle),
       progress: await getProgress(session),
+      partnerUserId,
     });
   }),
 );

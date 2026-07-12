@@ -119,16 +119,35 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   // The access token lives 15 minutes, so this fires constantly in normal use —
   // it's the happy path, not an edge case.
   if (res.status === 401) {
-    let fresh: AuthTokens;
-    try {
-      fresh = await refreshTokens(tokens.refreshToken);
-    } catch {
-      // Refresh token is expired or revoked: this is a real logout.
-      await clearTokens();
-      onSessionExpired();
-      throw new ApiError(401, 'UNAUTHORIZED', 'Your session expired. Sign in again.');
+    /**
+     * Re-read from storage before refreshing.
+     *
+     * Requests fire in parallel (the home screen alone makes several on launch),
+     * and each captured `tokens` at its own start. If another request already
+     * refreshed while this one was in flight, our captured refresh token has been
+     * ROTATED AWAY and is now invalid — presenting it would get a correct
+     * rejection, and the catch below would sign the user out for no reason.
+     *
+     * Single-flighting refreshTokens() only helps when the 401s land at the same
+     * moment. This handles the far more common case where they land seconds apart.
+     */
+    const current = await loadTokens();
+
+    if (current && current.accessToken !== tokens.accessToken) {
+      // Somebody else already refreshed. Just use what they got.
+      res = await send(current.accessToken);
+    } else {
+      let fresh: AuthTokens;
+      try {
+        fresh = await refreshTokens(current?.refreshToken ?? tokens.refreshToken);
+      } catch {
+        // Refresh token is genuinely expired or revoked: this is a real logout.
+        await clearTokens();
+        onSessionExpired();
+        throw new ApiError(401, 'UNAUTHORIZED', 'Your session expired. Sign in again.');
+      }
+      res = await send(fresh.accessToken);
     }
-    res = await send(fresh.accessToken);
   }
 
   if (!res.ok) throw await toApiError(res);

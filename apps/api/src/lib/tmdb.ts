@@ -139,6 +139,27 @@ export function listPage(
   });
 }
 
+/**
+ * /discover with arbitrary params — the lazy catalog needs to pass provider ids,
+ * genres and runtime, which listPage() doesn't expose.
+ *
+ * Note what /discover CANNOT do: filter to titles that have a trailer. There is no
+ * such parameter, and about half of all titles don't have one — which is why the
+ * caller over-fetches and drops them after checking /videos per title.
+ */
+export function discover(
+  media: 'movie' | 'tv',
+  params: Record<string, string>,
+): Promise<TmdbPage> {
+  return tmdb<TmdbPage>(`/discover/${media}`, params);
+}
+
+/** Genre name -> TMDB id, for the media type. Movie and TV number them differently. */
+export async function genreMap(media: 'movie' | 'tv'): Promise<Map<string, number>> {
+  const res = await tmdb<{ genres: { id: number; name: string }[] }>(`/genre/${media}/list`);
+  return new Map(res.genres.map((g) => [g.name, g.id]));
+}
+
 /** One call gets details, trailers, and providers — 3x fewer requests than separate hits. */
 export function detail(media: 'movie' | 'tv', id: number): Promise<TmdbDetail> {
   return tmdb<TmdbDetail>(`/${media}/${id}`, { append_to_response: 'videos,watch/providers' });

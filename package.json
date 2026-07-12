@@ -18,6 +18,10 @@
     "shared:build": "npm run build --workspace=@watchly/shared",
     "db:push": "npm run db:push --workspace=@watchly/api",
     "db:studio": "npm run db:studio --workspace=@watchly/api",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspace=@watchly/api"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

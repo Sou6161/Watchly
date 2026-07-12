@@ -39,7 +39,7 @@ authRouter.post(
     });
 
     const tokens = await issueTokens(user.id);
-    const body: AuthResponse = { ...tokens, user: toPublicUser(user) };
+    const body: AuthResponse = { ...tokens, user: await toPublicUser(user) };
     res.status(201).json(body);
   }),
 );
@@ -64,7 +64,7 @@ authRouter.post(
     }
 
     const tokens = await issueTokens(user.id);
-    const body: AuthResponse = { ...tokens, user: toPublicUser(user) };
+    const body: AuthResponse = { ...tokens, user: await toPublicUser(user) };
     res.json(body);
   }),
 );
@@ -76,7 +76,7 @@ authRouter.post(
   wrap(async (req, res) => {
     const { refreshToken } = parseBody(refreshSchema, req.body);
     const { tokens, user } = await rotateRefreshToken(refreshToken);
-    const body: AuthResponse = { ...tokens, user: toPublicUser(user) };
+    const body: AuthResponse = { ...tokens, user: await toPublicUser(user) };
     res.json(body);
   }),
 );

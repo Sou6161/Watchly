@@ -194,6 +194,12 @@ export const RECENT_SWIPE_EXCLUSION_DAYS = 30;
 
 /* ------------------------------------------------------------- api types */
 
+/** A saved recurring partner, for the one-tap "Start with X" button. */
+export interface PublicPartner {
+  id: string;
+  displayName: string;
+}
+
 export interface PublicUser {
   id: string;
   email: string;
@@ -201,9 +207,30 @@ export interface PublicUser {
   region: Region;
   services: string[];
   partnerId: string | null;
+  /**
+   * The saved partner's name, resolved server-side. The client needs it to label
+   * a button ("Start with Aditi") and has no other way to turn an id into a name
+   * — it can't look up other users, and it shouldn't be able to.
+   */
+  partner: PublicPartner | null;
   /** False until the user has picked a region + at least one service. */
   onboarded: boolean;
   createdAt: string;
+}
+
+/** One row in the home screen's recent-sessions list. */
+export interface SessionSummary {
+  id: string;
+  mode: SessionMode;
+  status: SessionStatus;
+  /** The other person's name, from this caller's point of view. */
+  partnerLabel: string;
+  matchCount: number;
+  /** Posters of the matches, for the little stack on the history row. */
+  matchPosters: string[];
+  mood: string | null;
+  createdAt: string;
+  completedAt: string | null;
 }
 
 export interface AuthTokens {

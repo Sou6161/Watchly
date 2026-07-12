@@ -11,9 +11,12 @@ export const meRouter = Router();
 
 meRouter.use(requireAuth);
 
-meRouter.get('/', (req, res) => {
-  res.json(toPublicUser((req as AuthedRequest).user));
-});
+meRouter.get(
+  '/',
+  wrap(async (req, res) => {
+    res.json(await toPublicUser((req as AuthedRequest).user));
+  }),
+);
 
 const updateSchema = z
   .object({
@@ -74,6 +77,6 @@ meRouter.patch(
       },
     });
 
-    res.json(toPublicUser(updated));
+    res.json(await toPublicUser(updated));
   }),
 );

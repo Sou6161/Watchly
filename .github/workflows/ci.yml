@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  # A new push supersedes the one before it — no point burning minutes on a commit
+  # nobody is waiting for any more.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API — typecheck, build, test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: watchly_test
+        ports: ['5432:5432']
+        # Without this the job races the container and the first query fails.
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/watchly_test
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/watchly_test
+      # Test-only. Real secrets live in Render; these just have to be long enough
+      # and different from each other, which the app enforces at boot.
+      JWT_ACCESS_SECRET: ci_access_secret_at_least_32_chars_long_ok
+      JWT_REFRESH_SECRET: ci_refresh_secret_at_least_32_chars_long_x
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - run: npm ci
+
+      # Applies the same committed migrations Render will run. If a migration is
+      # missing or broken, CI fails here rather than in production.
+      - name: Apply migrations
+        run: npm run db:deploy --workspace=@watchly/api
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+        working-directory: apps/api
+
+      - name: Test
+        run: npx vitest run
+        working-directory: apps/api
+
+      - name: Build (as Render does)
+        run: npm run build --workspace=@watchly/api
+
+  mobile:
+    name: Mobile — typecheck and bundle
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+        working-directory: apps/mobile
+
+      # This is the step that earns its keep.
+      #
+      # Typechecking would not have caught a single one of the serious bugs this
+      # project actually hit: a duplicate React hoisted into the workspace root, a
+      # react-native-worklets version whose native ABI didn't match Expo Go's, or a
+      # Metro resolver config that couldn't see nested node_modules. All three
+      # typechecked perfectly and died the moment the bundle was built.
+      #
+      # `expo export` runs the real Metro + Babel pipeline headlessly (~15s) and
+      # fails on any of them.
+      - name: Bundle (Metro + Babel, both platforms)
+        run: |
+          npx expo export --platform android --output-dir /tmp/export-android
+          npx expo export --platform ios --output-dir /tmp/export-ios
+        working-directory: apps/mobile
