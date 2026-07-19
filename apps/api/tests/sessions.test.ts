@@ -6,7 +6,7 @@ async function createSession(token: string, mode: 'SAME_DEVICE' | 'MULTI_DEVICE'
   const res = await request(app)
     .post('/api/sessions')
     .set(auth(token))
-    .send({ mode })
+    .send({ mode, titleType: 'MOVIE' })
     .expect(201);
   return res.body as { session: { id: string; code: string }; titles: { id: string }[] };
 }
@@ -21,7 +21,7 @@ describe('sessions', () => {
   it('refuses to build a queue for a user with no services', async () => {
     const res = await request(app)
       .post('/api/auth/signup')
-      .send({ email: 'bare@example.com', password: 'password123', displayName: 'Bare' })
+      .send({ email: 'bare@example.com', password: 'couch-potato-9', displayName: 'Bare' })
       .expect(201);
 
     await seedTitles(5);
@@ -29,7 +29,7 @@ describe('sessions', () => {
     await request(app)
       .post('/api/sessions')
       .set(auth(res.body.accessToken))
-      .send({ mode: 'SAME_DEVICE' })
+      .send({ mode: 'SAME_DEVICE', titleType: 'MOVIE' })
       .expect(400);
   });
 

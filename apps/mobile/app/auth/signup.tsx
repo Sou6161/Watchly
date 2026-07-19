@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Link } from 'expo-router';
-import { PASSWORD_MIN_LENGTH } from '@watchly/shared';
+import { checkPassword } from '@watchly/shared';
 import { Button, Field, FormError, Heading, Screen, Subheading } from '../../src/components/ui';
 import { useAuthStore } from '../../src/stores/auth';
 import { ApiError } from '../../src/lib/api';
@@ -35,8 +35,13 @@ export default function Signup() {
     }
   };
 
-  const ready =
-    displayName.trim().length > 0 && email.trim().length > 0 && password.length >= PASSWORD_MIN_LENGTH;
+  // Same rule the server enforces, run locally so a weak password shows up while
+  // typing rather than after a round trip. The server check is the real control;
+  // this is only courtesy.
+  const pwCheck = checkPassword(password, email.trim());
+  const showPwProblem = password.length > 0 && !pwCheck.ok;
+
+  const ready = displayName.trim().length > 0 && email.trim().length > 0 && pwCheck.ok;
 
   return (
     <Screen>
@@ -75,10 +80,10 @@ export default function Signup() {
           label="Password"
           value={password}
           onChangeText={setPassword}
-          error={fields.password}
+          error={fields.password ?? (showPwProblem ? pwCheck.message : undefined)}
           secureTextEntry
           autoComplete="new-password"
-          placeholder={`At least ${PASSWORD_MIN_LENGTH} characters`}
+          placeholder="At least 8 characters"
           returnKeyType="go"
           onSubmitEditing={submit}
         />

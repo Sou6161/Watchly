@@ -8,6 +8,7 @@ import { Button, Heading, Screen } from '../../src/components/ui';
 import { useSessionStore } from '../../src/stores/session';
 import { useAuthStore, useUser } from '../../src/stores/auth';
 import { ErrorState, MatchCardSkeleton } from '../../src/components/states';
+import { track } from '../../src/lib/analytics';
 import { api } from '../../src/lib/api';
 import { openInService } from '../../src/lib/deeplinks';
 import type { PublicSession, PublicTitle, ResultsResponse } from '../../src/lib/types';
@@ -41,6 +42,12 @@ export default function Results() {
         setMatches(res.matches);
         setPartnerUserId(res.partnerUserId);
         setFailed(false);
+
+        track.resultsViewed({
+          matchCount: res.matches.length,
+          mode: res.session.mode,
+          titleType: res.session.titleType,
+        });
 
         if (res.matches.length > 0) {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -252,6 +259,9 @@ function MatchCard({ title, region }: { title: PublicTitle; region: Region }) {
             accessibilityRole="button"
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              // The punchline. If matches happen but this stays flat, the product
+              // isn't landing — people are agreeing and then not watching.
+              track.serviceOpened({ service: svc.id, titleType: title.type });
               openInService(svc.id, title.title);
             }}
             style={({ pressed }) => [

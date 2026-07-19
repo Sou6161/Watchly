@@ -11,7 +11,7 @@ export const app = createApp({ rateLimit: false });
 export async function signUp(email: string, displayName: string) {
   const res = await request(app)
     .post('/api/auth/signup')
-    .send({ email, password: 'password123', displayName })
+    .send({ email, password: 'couch-potato-9', displayName })
     .expect(201);
 
   // A fresh account has no services, and session creation rightly refuses to build
@@ -44,7 +44,7 @@ export async function seedTitles(count: number, overrides: Partial<Prisma.TitleC
     titles.push(
       await prisma.title.create({
         data: {
-          type: 'MOVIE',
+          type: 'MOVIE' as const,
           title: `Test Title ${tmdbId}`,
           trailerYoutubeId: `yt${tmdbId}`,
           posterUrl: `https://example.com/${tmdbId}.jpg`,

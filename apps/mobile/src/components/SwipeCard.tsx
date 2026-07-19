@@ -16,6 +16,7 @@ import * as Haptics from 'expo-haptics';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import type { Decision } from '@watchly/shared';
 import type { PublicTitle } from '../lib/types';
+import { track } from '../lib/analytics';
 import { colors, radii, spacing, type } from '../theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -45,17 +46,31 @@ const VIDEO_H = CARD_H;
 const VIDEO_W = CARD_H * (16 / 9);
 const VIDEO_OFFSET_X = (CARD_W - VIDEO_W) / 2; // negative: overflows both sides
 
+/** Resting scale/offset of the card behind the top one — what makes it a deck. */
+const BACK_SCALE = 0.93;
+const BACK_OFFSET_Y = 14;
+
 interface Props {
   title: PublicTitle;
   onDecide: (decision: Decision) => void;
-  /** The card underneath, which scales up as this one is dragged away. */
   isTop: boolean;
+  /**
+   * 0..1 — how far the TOP card has been dragged toward a decision.
+   *
+   * Written by the top card, read by the one underneath so it rises to meet the
+   * user as the top card leaves. Shared rather than local state because it updates
+   * every frame on the UI thread; routing it through React would drop frames in
+   * the one interaction that cannot afford to.
+   */
+  deckProgress: SharedValue<number>;
 }
 
-export function SwipeCard({ title, onDecide, isTop }: Props) {
+export function SwipeCard({ title, onDecide, isTop, deckProgress }: Props) {
   const x = useSharedValue(0);
   const y = useSharedValue(0);
   const gone = useSharedValue(false);
+  /** Latches so the threshold tick fires once per crossing, not every frame. */
+  const armed = useSharedValue(false);
 
   /**
    * Tap to play. The poster is the resting state and stays untouched until the
@@ -83,7 +98,12 @@ export function SwipeCard({ title, onDecide, isTop }: Props) {
 
   const toggleTrailer = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setRequested((prev) => !prev);
+    setRequested((prev) => {
+      // Only the opt-IN is interesting: tap-to-play replaced autoplay, so this is
+      // how we learn whether people actually want the trailer.
+      if (!prev) track.trailerPlayed();
+      return !prev;
+    });
   };
 
   /**
@@ -99,18 +119,35 @@ export function SwipeCard({ title, onDecide, isTop }: Props) {
 
   const videoStyle = useAnimatedStyle(() => ({ opacity: videoOpacity.value }));
 
+  /** Light tap the instant the swipe crosses into committal territory. */
+  const tick = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  /**
+   * Each decision gets its own feel, because they are not the same kind of act.
+   *
+   * YES is the one worth celebrating. NO is a rejection. But SEEN and MAYBE are
+   * neither — they're neutral bookkeeping, and firing the system Warning pattern
+   * at someone for "seen it" makes an ordinary action feel like a mistake. They
+   * get a plain tap instead.
+   */
   const commit = (decision: Decision) => {
-    Haptics.notificationAsync(
-      decision === 'YES'
-        ? Haptics.NotificationFeedbackType.Success
-        : Haptics.NotificationFeedbackType.Warning,
-    );
+    if (decision === 'YES') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else if (decision === 'NO') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
     onDecide(decision);
   };
 
   const fly = (decision: Decision, toX: number, toY: number) => {
     'worklet';
     gone.value = true;
+    // The card behind is now the top card — snap it fully forward.
+    deckProgress.value = withTiming(1, { duration: 220 });
     x.value = withTiming(toX, { duration: 220 });
     y.value = withTiming(toY, { duration: 220 }, () => {
       runOnJS(commit)(decision);
@@ -123,6 +160,27 @@ export function SwipeCard({ title, onDecide, isTop }: Props) {
       if (gone.value) return;
       x.value = e.translationX;
       y.value = e.translationY;
+
+      const travel = Math.max(Math.abs(e.translationX), Math.abs(e.translationY));
+
+      // Feed the card underneath, so it rises as this one is pulled away.
+      deckProgress.value = Math.min(travel / SWIPE_THRESHOLD, 1);
+
+      /**
+       * A tick at the moment the swipe becomes committal.
+       *
+       * Without it the threshold is invisible: you let go and find out afterwards
+       * whether it counted. With it your thumb knows, which is most of what makes
+       * a swipe feel confident rather than hopeful. Latched so it fires once per
+       * crossing — firing every frame past the line would buzz continuously.
+       */
+      const past = travel > SWIPE_THRESHOLD;
+      if (past && !armed.value) {
+        armed.value = true;
+        runOnJS(tick)();
+      } else if (!past && armed.value) {
+        armed.value = false;
+      }
     })
     .onEnd((e) => {
       if (gone.value) return;
@@ -144,9 +202,12 @@ export function SwipeCard({ title, onDecide, isTop }: Props) {
         return;
       }
 
-      // Didn't clear the bar — spring home.
+      // Didn't clear the bar — spring home, and let the card underneath settle
+      // back down with it.
       x.value = withSpring(0, SPRING);
       y.value = withSpring(0, SPRING);
+      deckProgress.value = withSpring(0, SPRING);
+      armed.value = false;
     });
 
   const tap = Gesture.Tap()
@@ -161,6 +222,18 @@ export function SwipeCard({ title, onDecide, isTop }: Props) {
   // Exclusive, with pan first: if the finger moves, it's a swipe and the tap is
   // abandoned. Racing them would let a fast flick also toggle the trailer.
   const gesture = Gesture.Exclusive(pan, tap);
+
+  /**
+   * The card underneath. Sits smaller and lower, and rises to full size as the top
+   * card is dragged away — so the deck reads as a stack with depth rather than a
+   * single card that teleports to the next title.
+   */
+  const backStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: BACK_SCALE + (1 - BACK_SCALE) * deckProgress.value },
+      { translateY: BACK_OFFSET_Y * (1 - deckProgress.value) },
+    ],
+  }));
 
   const cardStyle = useAnimatedStyle(() => {
     // Tilt scales with horizontal travel, capped so it never looks unhinged.
@@ -181,7 +254,7 @@ export function SwipeCard({ title, onDecide, isTop }: Props) {
 
   return (
     <GestureDetector gesture={gesture}>
-      <Animated.View style={[s.card, cardStyle]}>
+      <Animated.View style={[s.card, isTop ? cardStyle : backStyle]}>
         {/* Poster is the base layer and the fallback: it must be visible before
             the trailer loads, and stay visible if the trailer never does. */}
         {title.posterUrl ? (

@@ -26,6 +26,26 @@ export const authLimiter = rateLimit({
 });
 
 /**
+ * Signup, throttled much harder than login.
+ *
+ * Signup necessarily reveals whether an email is already registered — you have to
+ * tell someone "that address is taken" or the form is unusable. That makes it an
+ * enumeration oracle, and the only real defence is making it slow: a genuine
+ * person signs up once, so five attempts an hour is invisible to them and turns a
+ * list of a million addresses into roughly twenty-three years of work.
+ *
+ * Successful signups still count. Unlike login, repeated *successes* from one IP
+ * are the suspicious case, not the innocent one.
+ */
+export const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: body,
+});
+
+/**
  * A blunt ceiling for everything else. Well above what the app does in normal
  * use (a session is ~15 votes over several minutes) but low enough that a runaway
  * client or a scraper can't melt the free tier.

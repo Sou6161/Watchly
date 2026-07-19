@@ -5,8 +5,11 @@ export interface QueueFilters {
   region: Region;
   /** Our internal service ids. A title qualifies if it streams on ANY of them. */
   services: string[];
+  /** MOVIE or TV — never both. Chosen before anything else. */
+  titleType: 'MOVIE' | 'TV';
   /** Mood genres. A title qualifies if it has ANY of them. Empty = no filter. */
   genres: string[];
+  /** Movies only; a series' runtime is per-episode so capping it is meaningless. */
   maxRuntime: number | null;
   limit: number;
 }
@@ -27,9 +30,12 @@ export async function buildQueue(
   filters: QueueFilters,
   excludeForUserIds: string[],
 ): Promise<Title[]> {
-  const { region, services, genres, maxRuntime, limit } = filters;
+  const { region, services, titleType, genres, maxRuntime, limit } = filters;
 
   const conditions: Prisma.Sql[] = [
+    // Movie night or series night — never a deck with both mixed in.
+    Prisma.sql`t.type = ${titleType}::"TitleType"`,
+
     // Streamable in this region on at least one service the user pays for.
     // `?|` asks: does this jsonb array share any element with the given text[]?
     Prisma.sql`t."watchProviders" -> ${region} -> 'flatrate' ?| ${services}::text[]`,
@@ -40,7 +46,11 @@ export async function buildQueue(
     conditions.push(Prisma.sql`t.genres && ${genres}::text[]`);
   }
 
-  if (maxRuntime !== null) {
+  // Movies only. A series' runtime is per-EPISODE, so "under 100 min" would be
+  // satisfied by a 62-episode show — the opposite of what someone asking for
+  // something short wants. The client doesn't offer the filter for TV; this guard
+  // makes it true regardless of what the client sends.
+  if (maxRuntime !== null && titleType === 'MOVIE') {
     // Titles with unknown runtime are excluded when the user asked for something
     // short — showing a possible 3-hour epic under "Under 100 min" breaks trust.
     conditions.push(Prisma.sql`t.runtime IS NOT NULL AND t.runtime <= ${maxRuntime}`);

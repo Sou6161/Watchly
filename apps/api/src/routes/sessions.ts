@@ -25,6 +25,8 @@ sessionsRouter.use(requireAuth);
 
 const createSchema = z.object({
   mode: z.enum(['SAME_DEVICE', 'MULTI_DEVICE']),
+  // Movie night or series night. Required — the client asks before anything else.
+  titleType: z.enum(['MOVIE', 'TV']),
   mood: z.enum(MOOD_IDS as [string, ...string[]]).nullish(),
   maxRuntime: z.number().int().positive().max(600).nullish(),
   region: z.enum(REGIONS).optional(),
@@ -61,8 +63,10 @@ sessionsRouter.post(
       {
         region,
         services,
-        genres: body.mood ? (moodById(body.mood)?.genres ?? []) : [],
-        maxRuntime: body.maxRuntime ?? null,
+        titleType: body.titleType,
+        genres: body.mood ? (moodById(body.mood)?.genres[body.titleType] ?? []) : [],
+        // Ignored for series — runtime is per-episode there, so a cap is meaningless.
+        maxRuntime: body.titleType === 'MOVIE' ? (body.maxRuntime ?? null) : null,
         limit: SESSION_QUEUE_SIZE,
       },
       [me.id],
@@ -87,8 +91,9 @@ sessionsRouter.post(
         personBLabel: body.personBLabel ?? 'Person B',
         region,
         services,
+        titleType: body.titleType,
         mood: body.mood ?? null,
-        maxRuntime: body.maxRuntime ?? null,
+        maxRuntime: body.titleType === 'MOVIE' ? (body.maxRuntime ?? null) : null,
         titleQueue: titles.map((t) => t.id),
       },
     });
@@ -478,6 +483,7 @@ export function toPublicSession(s: Session) {
     personBLabel: s.personBLabel,
     region: s.region,
     services: s.services,
+    titleType: s.titleType,
     mood: s.mood,
     maxRuntime: s.maxRuntime,
     queueLength: s.titleQueue.length,

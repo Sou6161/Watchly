@@ -18,6 +18,17 @@ const schema = z.object({
   ACCESS_TOKEN_TTL: z.string().default('15m'),
   REFRESH_TOKEN_TTL: z.string().default('30d'),
 
+  /**
+   * Wall-clock floor for a signup response, in ms. Levels the timing of a
+   * duplicate-email rejection against a successful signup so the endpoint can't
+   * be used to enumerate accounts.
+   *
+   * Configurable purely so the test suite can set it to 0 — at the production
+   * value every test signup costs ~1.8s, which took the suite from 13s to 86s.
+   * A test suite nobody runs protects nobody.
+   */
+  SIGNUP_TIME_FLOOR_MS: z.coerce.number().default(1800),
+
   // Used from Feature 2 onward; optional so Feature 1 boots without it.
   TMDB_API_KEY: z.string().optional(),
 

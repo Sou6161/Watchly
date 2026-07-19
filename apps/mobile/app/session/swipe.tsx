@@ -29,6 +29,20 @@ export default function Swipe() {
   const abandoned = useSessionStore((s) => s.abandoned);
   const reset = useSessionStore((s) => s.reset);
 
+  /**
+   * Drag progress of the top card, 0..1. Owned here rather than in the card so it
+   * survives the card being unmounted mid-throw, and so the card underneath can
+   * read the card above's gesture.
+   */
+  const deckProgress = useSharedValue(0);
+
+  // A new card is on top now — put the deck back to its resting depth. Without
+  // this the incoming back card would start already scaled up, and the stack
+  // would visibly flatten after the first swipe.
+  useEffect(() => {
+    deckProgress.value = 0;
+  }, [index, deckProgress]);
+
   // Reloading straight onto this route (or after a reset) leaves no deck to swipe.
   useEffect(() => {
     if (!session) router.replace('/home');
@@ -91,8 +105,24 @@ export default function Swipe() {
       <View style={s.deck}>
         {/* The next card sits underneath so the deck never looks empty mid-throw.
             Keyed by id so React tears down the old card's WebView on advance. */}
-        {next && <SwipeCard key={next.id} title={next} onDecide={() => {}} isTop={false} />}
-        {current && <SwipeCard key={current.id} title={current} onDecide={onDecide} isTop />}
+        {next && (
+          <SwipeCard
+            key={next.id}
+            title={next}
+            onDecide={() => {}}
+            isTop={false}
+            deckProgress={deckProgress}
+          />
+        )}
+        {current && (
+          <SwipeCard
+            key={current.id}
+            title={current}
+            onDecide={onDecide}
+            isTop
+            deckProgress={deckProgress}
+          />
+        )}
       </View>
 
       <View style={s.legend}>

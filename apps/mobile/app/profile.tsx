@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { REGIONS, servicesForRegion, type Region } from '@watchly/shared';
 import { Button, Chip, FormError, Heading, Screen } from '../src/components/ui';
@@ -13,6 +13,7 @@ export default function Profile() {
   const user = useUser();
   const updateMe = useAuthStore((s) => s.updateMe);
   const logout = useAuthStore((s) => s.logout);
+  const deleteAccount = useAuthStore((s) => s.deleteAccount);
   const router = useRouter();
 
   const [region, setRegion] = useState<Region>(user?.region ?? 'IN');
@@ -20,6 +21,11 @@ export default function Profile() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  const [deleting, setDeleting] = useState(false);
+  const [deletingBusy, setDeletingBusy] = useState(false);
+  const [password, setPassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
 
   const available = useMemo(() => servicesForRegion(region), [region]);
 
@@ -52,6 +58,26 @@ export default function Profile() {
       setError(e instanceof ApiError ? e.message : 'Could not save. Try again.');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const cancelDelete = () => {
+    setDeleting(false);
+    setPassword('');
+    setDeleteError('');
+  };
+
+  const confirmDelete = async () => {
+    setDeletingBusy(true);
+    setDeleteError('');
+    try {
+      await deleteAccount(password);
+      // No navigation needed — the root layout redirects to /auth/login the moment
+      // `user` becomes null.
+    } catch (e) {
+      setDeleteError(e instanceof ApiError ? e.message : 'Could not delete. Try again.');
+    } finally {
+      setDeletingBusy(false);
     }
   };
 
@@ -125,7 +151,55 @@ export default function Profile() {
           disabled={!dirty || selected.length === 0}
         />
         <Button label="Sign out" onPress={logout} variant="ghost" />
+        <Pressable
+          hitSlop={8}
+          onPress={() => setDeleting(true)}
+          style={({ pressed }) => [s.deleteLink, pressed && s.pressed]}
+        >
+          <Text style={s.deleteLinkText}>Delete my account</Text>
+        </Pressable>
       </View>
+
+      {/* Required by App Store Guideline 5.1.1(v): an app that lets you create an
+          account must let you delete it, in-app. Password-gated and spelled out,
+          because it is irreversible and nobody should reach it by fumbling. */}
+      <Modal visible={deleting} transparent animationType="fade" onRequestClose={cancelDelete}>
+        <View style={s.modalBackdrop}>
+          <View style={s.modalCard}>
+            <Text style={s.modalTitle}>Delete your account?</Text>
+            <Text style={s.modalBody}>
+              This erases your account, your sessions and everything you swiped. It
+              can&apos;t be undone.
+            </Text>
+
+            {!!deleteError && (
+              <View style={s.modalError}>
+                <FormError message={deleteError} />
+              </View>
+            )}
+
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Your password"
+              placeholderTextColor={colors.textFaint}
+              secureTextEntry
+              autoCapitalize="none"
+              style={s.modalInput}
+            />
+
+            <View style={s.modalActions}>
+              <Button
+                label={deletingBusy ? 'Deleting…' : 'Delete forever'}
+                onPress={confirmDelete}
+                loading={deletingBusy}
+                disabled={password.length === 0}
+              />
+              <Button label="Keep my account" onPress={cancelDelete} variant="ghost" />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -167,4 +241,36 @@ const s = StyleSheet.create({
 
   footer: { gap: spacing.sm, paddingBottom: spacing.md },
   saved: { ...type.caption, color: colors.gold, textAlign: 'center' },
+
+  deleteLink: { alignSelf: 'center', paddingVertical: spacing.sm },
+  deleteLinkText: { ...type.caption, color: colors.textFaint },
+
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(13,4,24,0.85)',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  modalCard: {
+    backgroundColor: '#241640',
+    borderRadius: radii.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+  },
+  modalTitle: { ...type.title, fontSize: 22, color: colors.text },
+  modalBody: { ...type.body, color: colors.textMuted, marginTop: spacing.sm },
+  modalError: { marginTop: spacing.md },
+  modalInput: {
+    ...type.body,
+    color: colors.text,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    height: 52,
+    marginTop: spacing.lg,
+  },
+  modalActions: { marginTop: spacing.lg, gap: spacing.sm },
 });

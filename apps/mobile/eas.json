@@ -1,0 +1,42 @@
+{
+  "cli": {
+    "version": ">= 5.9.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://watchly-0hvm.onrender.com",
+        "EXPO_PUBLIC_POSTHOG_KEY": "phc_ncyQWjhbuPaByraJPmj3R7pGHm7SX6FBBZbKJUp3mThA",
+        "EXPO_PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://watchly-0hvm.onrender.com",
+        "EXPO_PUBLIC_POSTHOG_KEY": "phc_ncyQWjhbuPaByraJPmj3R7pGHm7SX6FBBZbKJUp3mThA",
+        "EXPO_PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://watchly-0hvm.onrender.com",
+        "EXPO_PUBLIC_POSTHOG_KEY": "phc_ncyQWjhbuPaByraJPmj3R7pGHm7SX6FBBZbKJUp3mThA",
+        "EXPO_PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

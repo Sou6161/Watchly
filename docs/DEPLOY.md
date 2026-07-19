@@ -146,11 +146,28 @@ Verify it works without waiting for the schedule: run the workflow manually
 
 ## 4. Mobile
 
-The app is currently pointed at a LAN address for development. Before building
-for stores, set the production API in `apps/mobile/.env`:
+Set the production API in `apps/mobile/.env`:
 
 ```
-EXPO_PUBLIC_API_URL="https://watchly-api.onrender.com"
+EXPO_PUBLIC_API_URL="https://watchly-0hvm.onrender.com"
+```
+
+**`EXPO_PUBLIC_*` values are inlined into the bundle at build time, and Metro
+caches the result.** Editing `.env` alone changes nothing — the old value stays
+compiled in. Always clear the cache after touching it:
+
+```bash
+npx expo start --clear
+npx expo export --clear ...
+```
+
+Get this wrong and you ship an app pointing at a LAN address: it works flawlessly
+on your machine and for nobody else on earth. Verify before shipping by grepping
+the built bundle for the URL you expect:
+
+```bash
+npx expo export --platform android --output-dir /tmp/b --clear
+grep -a -c "onrender.com" /tmp/b/_expo/static/js/android/*.hbc   # want >= 1
 ```
 
 ### You need a development build, not Expo Go

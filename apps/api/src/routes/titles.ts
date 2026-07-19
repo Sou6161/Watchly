@@ -30,6 +30,7 @@ const querySchema = z.object({
       const list = Array.isArray(v) ? v : v.split(',');
       return list.map((s) => s.trim()).filter(Boolean);
     }),
+  titleType: z.enum(['MOVIE', 'TV']).default('MOVIE'),
   mood: z.enum(MOOD_IDS as [string, ...string[]]).optional(),
   maxRuntime: z.coerce.number().int().positive().max(600).optional(),
   limit: z.coerce.number().int().min(1).max(60).default(30),
@@ -66,8 +67,9 @@ titlesRouter.get(
     const filters: QueueFilters = {
       region,
       services,
-      genres: q.mood ? (moodById(q.mood)?.genres ?? []) : [],
-      maxRuntime: q.maxRuntime ?? null,
+      titleType: q.titleType,
+      genres: q.mood ? (moodById(q.mood)?.genres[q.titleType] ?? []) : [],
+      maxRuntime: q.titleType === 'MOVIE' ? (q.maxRuntime ?? null) : null,
       limit: q.limit,
     };
 
@@ -78,7 +80,13 @@ titlesRouter.get(
       // Lets the client tell "no matches for these filters" apart from "we only
       // found 6" — different empty states, different copy.
       exhausted: titles.length < q.limit,
-      filters: { region, services, mood: q.mood ?? null, maxRuntime: filters.maxRuntime },
+      filters: {
+        region,
+        services,
+        titleType: q.titleType,
+        mood: q.mood ?? null,
+        maxRuntime: filters.maxRuntime,
+      },
     });
   }),
 );

@@ -161,16 +161,60 @@ export interface Mood {
   id: string;
   label: string;
   emoji: string;
-  genres: string[];
+  /**
+   * Genre names PER MEDIA TYPE, because TMDB uses two different vocabularies.
+   *
+   * There is no "Horror" or "Action" genre for television — TMDB collapses those
+   * into "Sci-Fi & Fantasy" and "Action & Adventure". Using the movie list for a
+   * series search silently matches nothing and hands the user an empty deck, which
+   * is exactly what happened before this was split.
+   */
+  genres: Record<TitleType, string[]>;
 }
 
 export const MOODS: Mood[] = [
-  { id: 'funny', label: 'Make us laugh', emoji: '😂', genres: ['Comedy'] },
-  { id: 'thrilling', label: 'Keep us on edge', emoji: '😰', genres: ['Thriller', 'Mystery', 'Crime'] },
-  { id: 'romantic', label: 'Something tender', emoji: '💘', genres: ['Romance', 'Drama'] },
-  { id: 'action', label: 'Blow something up', emoji: '💥', genres: ['Action', 'Adventure'] },
-  { id: 'scary', label: 'Scare us', emoji: '👻', genres: ['Horror'] },
-  { id: 'mindbending', label: 'Mess with our heads', emoji: '🌀', genres: ['Science Fiction', 'Mystery', 'Fantasy'] },
+  {
+    id: 'funny',
+    label: 'Make us laugh',
+    emoji: '😂',
+    genres: { MOVIE: ['Comedy'], TV: ['Comedy'] },
+  },
+  {
+    id: 'thrilling',
+    label: 'Keep us on edge',
+    emoji: '😰',
+    genres: { MOVIE: ['Thriller', 'Mystery', 'Crime'], TV: ['Mystery', 'Crime'] },
+  },
+  {
+    id: 'romantic',
+    label: 'Something tender',
+    emoji: '💘',
+    // TV has no Romance genre; Soap is the closest thing TMDB offers.
+    genres: { MOVIE: ['Romance', 'Drama'], TV: ['Drama', 'Soap'] },
+  },
+  {
+    id: 'action',
+    label: 'Blow something up',
+    emoji: '💥',
+    genres: { MOVIE: ['Action', 'Adventure'], TV: ['Action & Adventure'] },
+  },
+  {
+    id: 'scary',
+    label: 'Scare us',
+    emoji: '👻',
+    // No Horror genre for TV at all. Mystery + Sci-Fi & Fantasy is the nearest
+    // honest approximation TMDB's taxonomy allows.
+    genres: { MOVIE: ['Horror'], TV: ['Mystery', 'Sci-Fi & Fantasy'] },
+  },
+  {
+    id: 'mindbending',
+    label: 'Mess with our heads',
+    emoji: '🌀',
+    genres: {
+      MOVIE: ['Science Fiction', 'Mystery', 'Fantasy'],
+      TV: ['Sci-Fi & Fantasy', 'Mystery'],
+    },
+  },
 ];
 
 export const MOOD_IDS = MOODS.map((m) => m.id);
@@ -179,7 +223,23 @@ export function moodById(id: string): Mood | undefined {
   return MOODS.find((m) => m.id === id);
 }
 
-/** Duration filters, in minutes. `null` max = no upper bound. */
+/**
+ * Movie or series — asked before anything else, because it changes what the rest
+ * of the filters even mean.
+ *
+ * Notably the duration filter: TMDB reports a series' runtime PER EPISODE, so
+ * "under 100 min" would be satisfied by a 62-episode show with 40-minute episodes.
+ * Someone asking for something short means "we have 90 minutes tonight". So the
+ * duration filter is offered for movies only.
+ */
+export const WATCH_KINDS = [
+  { id: 'MOVIE', label: 'A movie', emoji: '🎬', blurb: 'One sitting, done tonight.' },
+  { id: 'TV', label: 'A series', emoji: '📺', blurb: 'Something to start together.' },
+] as const;
+
+export type WatchKind = (typeof WATCH_KINDS)[number]['id'];
+
+/** Duration filters, in minutes. `null` max = no upper bound. Movies only. */
 export const DURATION_FILTERS = [
   { id: 'short', label: 'Under 100 min', maxRuntime: 100 },
   { id: 'medium', label: 'Under 2 hours', maxRuntime: 120 },
@@ -275,6 +335,60 @@ export interface ApiErrorBody {
 }
 
 export const PASSWORD_MIN_LENGTH = 8;
+
+/**
+ * Passwords that a length check happily accepts and an attacker tries first.
+ *
+ * A minimum length alone is close to useless: "password", "12345678" and
+ * "qwertyui" are all eight characters. Every real credential-stuffing attempt
+ * starts with a list like this, so blocking the top of it removes most of the
+ * risk for one comparison.
+ *
+ * Deliberately small and readable rather than a bundled breach corpus — the long
+ * tail needs a k-anonymity lookup against Have I Been Pwned, which is worth doing
+ * when there are real users, not at zero.
+ */
+const COMMON_PASSWORDS = new Set([
+  'password', 'password1', 'password123', 'passw0rd', 'p@ssword',
+  '12345678', '123456789', '1234567890', '12345678910', '87654321',
+  'qwertyui', 'qwerty123', 'qwertyuiop', 'asdfghjk', 'asdfghjkl',
+  'iloveyou', 'sunshine', 'princess', 'football', 'baseball',
+  'welcome1', 'admin123', 'letmein1', 'trustno1', 'monkey12',
+  'abc12345', 'a1b2c3d4', '11111111', '00000000', 'zaq12wsx',
+  'watchly', 'watchly1', 'watchly123',
+]);
+
+export interface PasswordProblem {
+  ok: boolean;
+  message?: string;
+}
+
+/**
+ * Shared by the client (instant feedback while typing) and the server (the check
+ * that actually counts — a client-side rule is a suggestion, not a control).
+ */
+export function checkPassword(password: string, email?: string): PasswordProblem {
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    return { ok: false, message: `Use at least ${PASSWORD_MIN_LENGTH} characters.` };
+  }
+
+  if (COMMON_PASSWORDS.has(password.toLowerCase())) {
+    return { ok: false, message: 'That one is on every password-guessing list. Pick another.' };
+  }
+
+  // A single repeated character clears any length check and is trivially guessed.
+  if (new Set(password).size < 4) {
+    return { ok: false, message: 'Too repetitive — mix in some different characters.' };
+  }
+
+  // Using the local part of your own email is a very common habit.
+  const local = email?.split('@')[0]?.toLowerCase();
+  if (local && local.length >= 4 && password.toLowerCase().includes(local)) {
+    return { ok: false, message: "Don't use your email address in your password." };
+  }
+
+  return { ok: true };
+}
 
 /* ------------------------------------------------------- realtime (Socket.io) */
 

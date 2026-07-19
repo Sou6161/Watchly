@@ -90,7 +90,25 @@ You need this URL for both stores. The honest list:
   same title twice in 30 days, and so past sessions still work.
 - **A saved partner**, if you choose to save one.
 
-You do **not** collect location, contacts, or device identifiers. There's no
-third-party analytics wired up yet — if you add PostHog (the spec mentions it),
-this list has to be updated before you ship, and both stores will ask you to
-declare it.
+You do **not** collect location or contacts.
+
+**Third-party analytics: PostHog.** This must be declared on both stores —
+App Store Connect's privacy questionnaire and Google Play's Data Safety form. What
+actually leaves the device:
+
+| Event | Properties |
+| --- | --- |
+| `session_started` | mode, movie/series, mood, runtime cap |
+| `card_swiped` | position in deck, decision, movie/series |
+| `results_viewed` | match count, mode |
+| `service_opened` | which streaming service |
+| `trailer_played` | — |
+
+Events are tied to the account id (never the email), plus region and a count of
+how many services are selected. **No title names, no vote history, no email, no
+device identifiers.** So the analytics can tell you *that* someone bailed on card
+six — never *what* they were watching.
+
+Declare on both stores: "Product interaction" / "App activity", linked to the
+user's account, used for analytics only. Not shared with third parties for
+advertising, and not used for tracking across apps.

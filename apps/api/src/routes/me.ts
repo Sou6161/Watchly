@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { REGIONS, SERVICE_IDS, servicesForRegion, type Region } from '@watchly/shared';
 import { prisma } from '../lib/prisma.js';
 import { ApiError, wrap } from '../lib/errors.js';
-import { toPublicUser } from '../lib/auth.js';
+import { toPublicUser, verifyPassword } from '../lib/auth.js';
 import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js';
 import { parseBody } from '../lib/validate.js';
 
@@ -15,6 +15,49 @@ meRouter.get(
   '/',
   wrap(async (req, res) => {
     res.json(await toPublicUser((req as AuthedRequest).user));
+  }),
+);
+
+/**
+ * DELETE /api/me — permanently delete the account.
+ *
+ * Not optional: App Store Guideline 5.1.1(v) requires any app offering account
+ * creation to offer in-app account deletion, and Google Play's Data Safety policy
+ * wants the same. Without this the app gets rejected.
+ *
+ * Requires the password, so someone who picks up an unlocked phone can't wipe the
+ * account. This is destructive and irreversible, so it should be hard to do by
+ * accident and impossible to do casually.
+ */
+const deleteSchema = z.object({ password: z.string().min(1) });
+
+meRouter.delete(
+  '/',
+  wrap(async (req, res) => {
+    const me = (req as AuthedRequest).user;
+    const { password } = parseBody(deleteSchema, req.body);
+
+    if (!(await verifyPassword(password, me.hashedPassword))) {
+      throw ApiError.unauthorized('That password is not right.');
+    }
+
+    /**
+     * What goes, and what deliberately stays:
+     *
+     * - The user row, and every session where they were person A (cascade), and
+     *   every vote in those sessions (cascade from session).
+     * - Sessions where they were person B are NOT deleted — they belong to the
+     *   other person's history too. personBId is set to null by the schema, and
+     *   personBLabel survives as plain text, so their partner's past nights still
+     *   read correctly instead of turning into "null's matches".
+     * - Anyone who saved them as a partner has partnerId nulled, not their account
+     *   damaged.
+     *
+     * Titles are shared cache and belong to nobody, so they stay.
+     */
+    await prisma.user.delete({ where: { id: me.id } });
+
+    res.status(204).end();
   }),
 );
 

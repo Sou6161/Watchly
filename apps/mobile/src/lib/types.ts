@@ -34,6 +34,7 @@ export interface PublicSession {
   personBLabel: string;
   region: Region;
   services: string[];
+  titleType: TitleType;
   mood: string | null;
   maxRuntime: number | null;
   queueLength: number;

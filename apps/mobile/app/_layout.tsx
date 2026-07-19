@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFonts, DMSerifDisplay_400Regular } from '@expo-google-fonts/dm-serif-display';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
 import { useAuthLoading, useAuthStore, useUser } from '../src/stores/auth';
+import { initAnalytics } from '../src/lib/analytics';
 import { colors } from '../src/theme';
 
 /**
@@ -47,6 +48,7 @@ function RootNavigator() {
 
   // Resume an existing session on cold start.
   useEffect(() => {
+    initAnalytics();
     restore();
   }, [restore]);
 

@@ -124,17 +124,18 @@ async function refreshFilterWindow(
   filters: QueueFilters,
   round: number,
 ): Promise<number> {
-  const { region, services, genres, maxRuntime, limit } = filters;
+  const { region, services, titleType, genres, maxRuntime, limit } = filters;
 
   const providerIds = providerIdsFor(region, services);
   if (providerIds.length === 0) return 0;
 
   const lookup = providerLookup(region);
 
-  // Both movies and TV, so "make us laugh" isn't all sitcoms or all films.
-  const media = ['movie', 'tv'] as const;
+  // ONE media type — the user picked movie night or series night, so fetching the
+  // other would burn TMDB calls on titles that can never enter the queue.
+  const media = [titleType === 'MOVIE' ? 'movie' : 'tv'] as const;
   // Enough candidates to survive the ~50% trailer cull, at 20 results per page.
-  const pages = Math.max(1, Math.ceil((limit * OVERFETCH) / media.length / 20));
+  const pages = Math.max(1, Math.ceil((limit * OVERFETCH) / 20));
 
   const candidates: { tmdbId: number; media: 'movie' | 'tv'; item: TmdbItem }[] = [];
 

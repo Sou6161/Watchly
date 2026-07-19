@@ -11,7 +11,7 @@ const CODE_LENGTH = 6;
 
 export default function Join() {
   const router = useRouter();
-  // Prefilled when arriving via a scanned watchly://join/XXXXXX deep link.
+  // Prefilled when arriving via a scanned watchly://session/join?code=XXXXXX link.
   const { code: prefill } = useLocalSearchParams<{ code?: string }>();
 
   const join = useSessionStore((s) => s.join);

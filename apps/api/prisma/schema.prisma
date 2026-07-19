@@ -86,7 +86,13 @@ model Session {
   services String[] @default([])
 
   // Filters chosen at session start.
+  //
+  // titleType is asked FIRST and is never null: a session is for a movie or for a
+  // series, never both. Defaulted to MOVIE so the column can be added to existing
+  // rows, but the API always sets it explicitly.
+  titleType   TitleType @default(MOVIE)
   mood        String?
+  // Movies only — a series' runtime is per-episode, so capping it is meaningless.
   maxRuntime  Int?
 
   // Ordered TMDB-backed Title ids. Frozen at creation so both people swipe the

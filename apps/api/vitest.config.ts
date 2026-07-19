@@ -27,6 +27,10 @@ export default defineConfig({
         process.env.JWT_REFRESH_SECRET ?? 'test_refresh_secret_at_least_32_chars_lo',
       NODE_ENV: 'test',
 
+      // The production floor (1.8s) is an anti-enumeration control, not logic —
+      // paying it on every test signup took the suite from 13s to 86s.
+      SIGNUP_TIME_FLOOR_MS: '0',
+
       // Deliberately blank. The catalogue is lazy — it calls TMDB when the local
       // cache can't satisfy a query — and a test suite that reaches the network is
       // slow, flaky, and dependent on someone else's uptime. With no key,

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Decision, SessionProgressPayload, Voter } from '@watchly/shared';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
+import { track } from '../lib/analytics';
 import type { PublicSession, PublicTitle } from '../lib/types';
 
 /**
@@ -46,6 +47,8 @@ interface SessionStore {
 
 interface CreateOpts {
   mode: 'SAME_DEVICE' | 'MULTI_DEVICE';
+  /** Movie night or series night — never a deck with both. */
+  titleType: 'MOVIE' | 'TV';
   mood?: string | null;
   maxRuntime?: number | null;
   personALabel?: string;
@@ -177,6 +180,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       body: { titleId: title.id, voter: asVoter, decision },
     }).catch(() => {
       // Swallowed on purpose — see above. Losing one vote must not break the run.
+    });
+
+    // Fired here rather than in the card component: every swipe funnels through
+    // this one function, so there is no path that silently skips instrumentation.
+    track.cardSwiped({
+      index,
+      total: titles.length,
+      decision,
+      titleType: session.titleType,
     });
 
     const nextVotes = { ...votes, [`${asVoter}:${title.id}`]: decision };

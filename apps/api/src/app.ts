@@ -6,7 +6,7 @@ import { meRouter } from './routes/me.js';
 import { titlesRouter } from './routes/titles.js';
 import { internalRouter } from './routes/internal.js';
 import { sessionsRouter } from './routes/sessions.js';
-import { apiLimiter, authLimiter } from './middleware/rateLimit.js';
+import { apiLimiter, authLimiter, signupLimiter } from './middleware/rateLimit.js';
 
 /**
  * The Express app, with no server attached.
@@ -47,7 +47,12 @@ export function createApp({ rateLimit = true }: { rateLimit?: boolean } = {}) {
   // the resulting failures would look like real bugs.
   const auth = rateLimit ? [authLimiter] : [];
   const general = rateLimit ? [apiLimiter] : [];
+  // Signup gets its own, stricter bucket — see the note on signupLimiter.
+  const signup = rateLimit ? [signupLimiter] : [];
 
+  // Mounted conditionally: with rate limiting off (tests) this array is empty, and
+  // app.use(path) with no middleware makes Express throw.
+  if (signup.length > 0) app.use('/api/auth/signup', ...signup);
   app.use('/api/auth', ...auth, authRouter);
   app.use('/api/me', ...general, meRouter);
   app.use('/api/titles', ...general, titlesRouter);

@@ -6,7 +6,7 @@ describe('auth', () => {
   it('signs up, and normalises the email', async () => {
     const res = await request(app)
       .post('/api/auth/signup')
-      .send({ email: '  SOU@Example.COM ', password: 'password123', displayName: 'Sourabh' })
+      .send({ email: '  SOU@Example.COM ', password: 'couch-potato-9', displayName: 'Sourabh' })
       .expect(201);
 
     expect(res.body.user.email).toBe('sou@example.com');
@@ -20,7 +20,7 @@ describe('auth', () => {
     await signUp('a@example.com', 'A');
     await request(app)
       .post('/api/auth/signup')
-      .send({ email: 'a@example.com', password: 'password123', displayName: 'A' })
+      .send({ email: 'a@example.com', password: 'couch-potato-9', displayName: 'A' })
       .expect(409);
   });
 
@@ -34,7 +34,7 @@ describe('auth', () => {
 
     const unknownEmail = await request(app)
       .post('/api/auth/login')
-      .send({ email: 'nobody@example.com', password: 'password123' })
+      .send({ email: 'nobody@example.com', password: 'couch-potato-9' })
       .expect(401);
 
     // Otherwise login doubles as an "is X registered?" oracle.
@@ -101,5 +101,38 @@ describe('auth', () => {
       .expect(422);
 
     expect(res.body.error.fields.password).toBeTruthy();
+  });
+});
+
+describe('password strength', () => {
+  const signup = (password: string, email = 'x@example.com') =>
+    request(app).post('/api/auth/signup').send({ email, password, displayName: 'X' });
+
+  /**
+   * A minimum length alone is close to useless — every one of these is eight
+   * characters and every one is near the top of a credential-stuffing list.
+   */
+  it.each(['password', '12345678', 'qwertyui', 'password123', 'iloveyou'])(
+    'rejects the common password %s',
+    async (pw) => {
+      const res = await signup(pw).expect(422);
+      expect(res.body.error.fields.password).toBeTruthy();
+    },
+  );
+
+  it('rejects a password made of one repeated character', async () => {
+    await signup('aaaaaaaa').expect(422);
+  });
+
+  it('rejects a password containing your own email name', async () => {
+    await signup('sourabh2024', 'sourabh@example.com').expect(422);
+  });
+
+  it('still rejects anything under the minimum length', async () => {
+    await signup('a1b2c3').expect(422);
+  });
+
+  it('accepts a reasonable password', async () => {
+    await signup('couch-potato-9').expect(201);
   });
 });

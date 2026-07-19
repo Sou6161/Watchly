@@ -13,8 +13,14 @@ services:
     # ever moves forward and never drops data — `db push` can, which is why it
     # stays a local-development tool. It runs at build, before the new instance
     # takes traffic, so the schema is always ahead of the code that needs it.
+    # --include=dev is REQUIRED, not optional. Render sets NODE_ENV=production, and
+    # npm then omits devDependencies — but TypeScript, Prisma's CLI and every
+    # @types/* package are devDependencies, and all of them are needed to *compile*
+    # even though none are needed to *run*. Without this the build fails with
+    # "Could not find a declaration file for module 'express'", which looks like a
+    # missing package rather than what it is: a stripped install.
     buildCommand: >-
-      npm ci &&
+      npm ci --include=dev &&
       npm run db:deploy --workspace=@watchly/api &&
       npm run build --workspace=@watchly/api
 
