@@ -11,6 +11,12 @@ export interface QueueFilters {
   genres: string[];
   /** Movies only; a series' runtime is per-episode so capping it is meaningless. */
   maxRuntime: number | null;
+  /** Minimum release year (from the era rule). null = no lower bound. */
+  minYear: number | null;
+  /** Minimum TMDB rating (from the quality rule). null = anything. */
+  minRating: number | null;
+  /** Original-language ISO code (from the language rule). null = any language. */
+  language: string | null;
   limit: number;
 }
 
@@ -30,7 +36,8 @@ export async function buildQueue(
   filters: QueueFilters,
   excludeForUserIds: string[],
 ): Promise<Title[]> {
-  const { region, services, titleType, genres, maxRuntime, limit } = filters;
+  const { region, services, titleType, genres, maxRuntime, minYear, minRating, language, limit } =
+    filters;
 
   const conditions: Prisma.Sql[] = [
     // Movie night or series night — never a deck with both mixed in.
@@ -54,6 +61,23 @@ export async function buildQueue(
     // Titles with unknown runtime are excluded when the user asked for something
     // short — showing a possible 3-hour epic under "Under 100 min" breaks trust.
     conditions.push(Prisma.sql`t.runtime IS NOT NULL AND t.runtime <= ${maxRuntime}`);
+  }
+
+  // Era rule: released no earlier than this year. Unknown release year is dropped
+  // rather than gambled on — "New" must not smuggle in an undated title.
+  if (minYear !== null) {
+    conditions.push(Prisma.sql`t."releaseYear" IS NOT NULL AND t."releaseYear" >= ${minYear}`);
+  }
+
+  // Quality rule: a rating floor. An unrated title can't clear a bar it has no
+  // score for, so it's excluded when the user asks for well-reviewed only.
+  if (minRating !== null) {
+    conditions.push(Prisma.sql`t.rating IS NOT NULL AND t.rating >= ${minRating}`);
+  }
+
+  // Language rule: match TMDB's original_language exactly.
+  if (language !== null) {
+    conditions.push(Prisma.sql`t.language = ${language}`);
   }
 
   // "Don't show titles the user has already swiped on in the last 30 days."

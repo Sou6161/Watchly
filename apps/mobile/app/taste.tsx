@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Heading, Screen } from '../src/components/ui';
@@ -102,6 +102,35 @@ function Profile({ profile, name }: { profile: TasteProfile; name: string }) {
         <Stat value={`${yesPct}%`} label={`${name}'s yes rate`} />
       </View>
 
+      {/* The loop, closed: the last thing you actually watched. Gives the
+          "watched together" number a face. */}
+      {profile.lastWatched && (
+        <Animated.View entering={FadeInDown.delay(80).duration(420)} style={s.lastWatched}>
+          {profile.lastWatched.posterUrl ? (
+            <Image
+              source={{ uri: profile.lastWatched.posterUrl }}
+              style={s.lwPoster}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={[s.lwPoster, s.lwPosterEmpty]} />
+          )}
+          <View style={s.lwBody}>
+            <Text style={s.lwEyebrow}>Last watched together</Text>
+            <Text style={s.lwTitle} numberOfLines={3}>
+              {profile.lastWatched.title}
+            </Text>
+          </View>
+        </Animated.View>
+      )}
+
+      {profile.seen > 0 && (
+        <Text style={s.seenLine}>
+          You&apos;ve already seen {profile.seen} of the {profile.swiped} you swiped — a well-watched
+          pair.
+        </Text>
+      )}
+
       {profile.loves.length > 0 && (
         <Animated.View entering={FadeInDown.delay(120).duration(420)}>
           <Text style={s.sectionLabel}>You gravitate to</Text>
@@ -132,7 +161,7 @@ function Stat({ value, label }: { value: string; label: string }) {
 function agreementBlurb(pct: number): string {
   if (pct >= 66) return 'You two are dangerously in sync.';
   if (pct >= 40) return 'A healthy amount of overlap.';
-  if (pct >= 20) return 'Opposites, mostly — that’s what negotiation is for.';
+  if (pct >= 20) return 'Opposites, mostly, that’s what negotiation is for.';
   return 'Wildly different taste. Somehow it works.';
 }
 
@@ -165,6 +194,31 @@ const s = StyleSheet.create({
   },
   statValue: { ...type.title, fontSize: 24, color: colors.text },
   statLabel: { ...type.caption, color: colors.textFaint, marginTop: spacing.xs, textAlign: 'center' },
+
+  lastWatched: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.card,
+    backgroundColor: '#241640',
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  lwPoster: { width: 60, height: 90, borderRadius: radii.sm, backgroundColor: colors.purple },
+  lwPosterEmpty: { opacity: 0.5 },
+  lwBody: { flex: 1, minWidth: 0 },
+  lwEyebrow: {
+    ...type.caption,
+    color: colors.gold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontSize: 11,
+    marginBottom: spacing.xs,
+  },
+  lwTitle: { ...type.title, fontSize: 18, lineHeight: 23, color: colors.text },
+
+  seenLine: { ...type.body, color: colors.textMuted },
 
   sectionLabel: { ...type.label, color: colors.textMuted, marginBottom: spacing.md },
   genres: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },

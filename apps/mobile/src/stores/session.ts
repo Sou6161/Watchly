@@ -54,6 +54,11 @@ interface CreateOpts {
   titleType: 'MOVIE' | 'TV';
   mood?: string | null;
   maxRuntime?: number | null;
+  /** Extra rules, sent as ids the server resolves. Omitted = no-op. */
+  era?: string;
+  rating?: string;
+  language?: string;
+  deckSize?: number;
   personALabel?: string;
   personBLabel?: string;
   /** Multi-device only: swipe now, let person B finish later. */

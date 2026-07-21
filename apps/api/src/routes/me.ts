@@ -43,6 +43,8 @@ meRouter.get(
         OR: [{ personAId: me.id }, { personBId: me.id }],
         status: 'COMPLETED',
       },
+      // Newest first so the first watched title we meet is the most recent one.
+      orderBy: { completedAt: 'desc' },
       select: {
         personAId: true,
         watchedTitleId: true,
@@ -59,13 +61,19 @@ meRouter.get(
 
     let swiped = 0;
     let yes = 0;
+    let seen = 0;
     let bothYesTotal = 0;
     let eitherYesTotal = 0;
     let watchedTogether = 0;
+    let lastWatchedTitleId: string | null = null;
     const genreYes = new Map<string, number>();
 
     for (const session of sessions) {
-      if (session.watchedTitleId) watchedTogether++;
+      if (session.watchedTitleId) {
+        watchedTogether++;
+        // Sessions are newest-first, so the first one wins.
+        if (lastWatchedTitleId === null) lastWatchedTitleId = session.watchedTitleId;
+      }
 
       // Which side is the account holder? In same-device they're always person A
       // (person B is a guest with no account), so their taste is person A's votes.
@@ -81,6 +89,9 @@ meRouter.get(
             yes++;
             for (const g of v.title.genres) genreYes.set(g, (genreYes.get(g) ?? 0) + 1);
           }
+          // "Seen it" — the pile of things you've already watched. A fun measure
+          // of how much you two get through.
+          if (v.decision === 'SEEN') seen++;
         }
         if (v.decision === 'YES') {
           (v.voter === 'PERSON_A' ? aYes : bYes).add(v.titleId);
@@ -100,15 +111,26 @@ meRouter.get(
       .slice(0, 6)
       .map(([genre, count]) => ({ genre, count }));
 
+    // The last thing you actually finished a night on — the loop closed. Shown as
+    // a poster on the taste screen, so the number "watched together" has a face.
+    const lastWatched = lastWatchedTitleId
+      ? await prisma.title.findUnique({
+          where: { id: lastWatchedTitleId },
+          select: { id: true, title: true, posterUrl: true },
+        })
+      : null;
+
     res.json({
       nights: sessions.length,
       swiped,
       yes,
+      seen,
       yesRate: swiped > 0 ? yes / swiped : 0,
       // Null, not zero, when there's nothing to measure yet — the client shows a
       // "play a few nights" state instead of a damning 0%.
       agreement: eitherYesTotal > 0 ? bothYesTotal / eitherYesTotal : null,
       watchedTogether,
+      lastWatched,
       loves,
     });
   }),

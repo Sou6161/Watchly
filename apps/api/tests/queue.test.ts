@@ -111,10 +111,54 @@ describe('title queue', () => {
     expect(later.body.titles.map((t: { id: string }) => t.id)).toContain(titles[0]!.id);
   });
 
+  it('filters by rating floor, dropping unrated titles', async () => {
+    const a = await signUp('a@example.com', 'A');
+    await seedTitles(2, { rating: 8.1 });
+    await seedTitles(2, { rating: 5.0 });
+    await seedTitles(2, { rating: null });
+
+    const res = await request(app)
+      .get('/api/titles/queue?rating=great') // 7.5+
+      .set(auth(a.accessToken))
+      .expect(200);
+
+    expect(res.body.titles).toHaveLength(2);
+    for (const t of res.body.titles) expect(t.rating).toBeGreaterThanOrEqual(7.5);
+  });
+
+  it('filters by release era, dropping older and undated titles', async () => {
+    const a = await signUp('a@example.com', 'A');
+    const thisYear = new Date().getFullYear();
+    await seedTitles(2, { releaseYear: thisYear });
+    await seedTitles(2, { releaseYear: 1999 });
+    await seedTitles(2, { releaseYear: null });
+
+    const res = await request(app)
+      .get('/api/titles/queue?era=recent') // last 5 years
+      .set(auth(a.accessToken))
+      .expect(200);
+
+    expect(res.body.titles).toHaveLength(2);
+    for (const t of res.body.titles) expect(t.releaseYear).toBeGreaterThanOrEqual(thisYear - 5);
+  });
+
+  it('filters by original language', async () => {
+    const a = await signUp('a@example.com', 'A');
+    await seedTitles(3, { language: 'hi' });
+    await seedTitles(3, { language: 'en' });
+
+    const res = await request(app)
+      .get('/api/titles/queue?language=hi')
+      .set(auth(a.accessToken))
+      .expect(200);
+
+    expect(res.body.titles).toHaveLength(3);
+  });
+
   it('rejects an unknown service', async () => {
     const a = await signUp('a@example.com', 'A');
     await request(app)
-      .get('/api/titles/queue?services=hulu')
+      .get('/api/titles/queue?services=notaservice')
       .set(auth(a.accessToken))
       .expect(400);
   });

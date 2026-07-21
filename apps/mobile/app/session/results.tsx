@@ -157,8 +157,8 @@ export default function Results() {
           <Animated.View entering={FadeIn.duration(500)}>
             <Heading>No overlap this time.</Heading>
             <Text style={s.emptyCopy}>
-              Fifteen trailers and not one you both wanted. Honestly, that&apos;s its own kind of
-              compatibility.
+              {session.queueLength} trailers and not one you both wanted. Honestly, that&apos;s its
+              own kind of compatibility.
             </Text>
           </Animated.View>
         </View>

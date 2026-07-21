@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { ThemeProvider, DarkTheme } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFonts, DMSerifDisplay_400Regular } from '@expo-google-fonts/dm-serif-display';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
@@ -60,16 +61,32 @@ function RootNavigator() {
   // redirect off the index route a no-op and left the app sitting on a blank
   // screen with nothing logged. The loading state belongs on the index route
   // (which renders a spinner), not in place of the navigator.
+  // Override expo-router's DEFAULT navigation theme, which follows the system
+  // colour scheme and so paints a WHITE card/container behind every screen. During
+  // a transition (and the back gesture) that white flashed through for a frame
+  // before our dark Screen painted. Handing the navigator a dark theme means the
+  // container is already our colour — no seam, in either direction.
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: colors.bgTop },
-        animation: 'fade',
-      }}
-    />
+    <ThemeProvider value={navTheme}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.bgBottom },
+          animation: 'fade',
+        }}
+      />
+    </ThemeProvider>
   );
 }
+
+const navTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    background: colors.bgBottom,
+    card: colors.bgBottom,
+  },
+};
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -101,7 +118,8 @@ export default function RootLayout() {
 }
 
 const s = StyleSheet.create({
-  flex: { flex: 1 },
+  // Dark, so even the root view behind the navigator never flashes white.
+  flex: { flex: 1, backgroundColor: colors.bgBottom },
   boot: {
     flex: 1,
     backgroundColor: colors.bgTop,

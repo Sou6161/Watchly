@@ -2,12 +2,20 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { Session } from '@prisma/client';
 import {
+  DECK_SIZES,
+  ERA_FILTERS,
+  LANGUAGE_FILTERS,
   MOOD_IDS,
   NEAR_MISS_LIMIT,
+  RATING_FILTERS,
   REGIONS,
   SERVICE_IDS,
   SESSION_QUEUE_SIZE,
+  WATCH_CHECK_MIN_AGE_HOURS,
   WATCH_CHECK_WINDOW_DAYS,
+  languageCodeForId,
+  minRatingForId,
+  minYearForEra,
   moodById,
   type Decision,
   type Region,
@@ -27,12 +35,28 @@ export const sessionsRouter = Router();
 
 sessionsRouter.use(requireAuth);
 
+// Zod needs a non-empty tuple of literals; derive them from the shared lists so a
+// new era/rating/language option can never drift out of sync with validation.
+const ERA_IDS = ERA_FILTERS.map((e) => e.id) as [string, ...string[]];
+const RATING_IDS = RATING_FILTERS.map((r) => r.id) as [string, ...string[]];
+const LANGUAGE_IDS = LANGUAGE_FILTERS.map((l) => l.id) as [string, ...string[]];
+
 const createSchema = z.object({
   mode: z.enum(['SAME_DEVICE', 'MULTI_DEVICE']),
   // Movie night or series night. Required — the client asks before anything else.
   titleType: z.enum(['MOVIE', 'TV']),
   mood: z.enum(MOOD_IDS as [string, ...string[]]).nullish(),
   maxRuntime: z.number().int().positive().max(600).nullish(),
+  // Extra "rules". Sent as ids; the server resolves them to concrete filter
+  // values. All default to no-op, so an old client omitting them is unaffected.
+  era: z.enum(ERA_IDS).optional(),
+  rating: z.enum(RATING_IDS).optional(),
+  language: z.enum(LANGUAGE_IDS).optional(),
+  deckSize: z
+    .number()
+    .int()
+    .refine((n) => (DECK_SIZES as readonly number[]).includes(n), 'Unsupported deck size.')
+    .optional(),
   region: z.enum(REGIONS).optional(),
   services: z.array(z.enum(SERVICE_IDS as [string, ...string[]])).optional(),
   // Same-device only: the two names typed at session start.
@@ -66,6 +90,8 @@ sessionsRouter.post(
       throw ApiError.badRequest('Pick at least one streaming service first.');
     }
 
+    const deckSize = body.deckSize ?? SESSION_QUEUE_SIZE;
+
     // Fetches from TMDB and caches on the fly if the local catalogue can't
     // already satisfy these filters.
     const titles = await ensureQueue(
@@ -77,7 +103,10 @@ sessionsRouter.post(
         genres: body.mood ? (moodById(body.mood)?.genres[body.titleType] ?? []) : [],
         // Ignored for series — runtime is per-episode there, so a cap is meaningless.
         maxRuntime: body.titleType === 'MOVIE' ? (body.maxRuntime ?? null) : null,
-        limit: SESSION_QUEUE_SIZE,
+        minYear: body.era ? minYearForEra(body.era) : null,
+        minRating: body.rating ? minRatingForId(body.rating) : null,
+        language: body.language ? languageCodeForId(body.language) : null,
+        limit: deckSize,
       },
       [me.id],
     );
@@ -123,23 +152,41 @@ sessionsRouter.post(
  * memory — a match is a title both people said YES to, so it's just the titles
  * whose YES count is 2.
  */
+const listQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(20).default(5),
+  offset: z.coerce.number().int().min(0).default(0),
+  // Optional history filters. Absent = no filter on that axis.
+  titleType: z.enum(['MOVIE', 'TV']).optional(),
+  mode: z.enum(['SAME_DEVICE', 'MULTI_DEVICE']).optional(),
+});
+
 sessionsRouter.get(
   '/',
   wrap(async (req, res) => {
     const me = (req as AuthedRequest).user;
-    const limit = Math.min(Number(req.query.limit ?? 5) || 5, 20);
+    const q = listQuerySchema.parse(req.query);
 
-    const sessions = await prisma.session.findMany({
-      where: {
-        OR: [{ personAId: me.id }, { personBId: me.id }],
-        status: 'COMPLETED',
-      },
+    const where = {
+      OR: [{ personAId: me.id }, { personBId: me.id }],
+      status: 'COMPLETED' as const,
+      ...(q.titleType && { titleType: q.titleType }),
+      ...(q.mode && { mode: q.mode }),
+    };
+
+    // Fetch one more than asked for: its presence is how we know there's a next
+    // page without a second COUNT query.
+    const rows = await prisma.session.findMany({
+      where,
       orderBy: { completedAt: 'desc' },
-      take: limit,
+      skip: q.offset,
+      take: q.limit + 1,
     });
 
+    const hasMore = rows.length > q.limit;
+    const sessions = hasMore ? rows.slice(0, q.limit) : rows;
+
     if (sessions.length === 0) {
-      res.json({ sessions: [] });
+      res.json({ sessions: [], hasMore: false });
       return;
     }
 
@@ -189,6 +236,7 @@ sessionsRouter.get(
         id: s.id,
         mode: s.mode,
         status: s.status,
+        titleType: s.titleType,
         // "The other person", from whichever side the caller was on.
         partnerLabel: iAmA ? s.personBLabel : s.personALabel,
         matchCount: matched.length,
@@ -202,7 +250,7 @@ sessionsRouter.get(
       };
     });
 
-    res.json({ sessions: summaries });
+    res.json({ sessions: summaries, hasMore });
   }),
 );
 
@@ -221,6 +269,9 @@ sessionsRouter.get(
   wrap(async (req, res) => {
     const me = (req as AuthedRequest).user;
     const since = new Date(Date.now() - WATCH_CHECK_WINDOW_DAYS * 86_400_000);
+    // Not too fresh: give the night time to actually happen before asking about it,
+    // so the prompt lands the morning after rather than the instant they match.
+    const settled = new Date(Date.now() - WATCH_CHECK_MIN_AGE_HOURS * 3_600_000);
 
     // Newest-first, but a zero-match night has nothing to have watched — so walk a
     // few back until we find one with actual matches rather than nagging or giving
@@ -230,7 +281,7 @@ sessionsRouter.get(
         OR: [{ personAId: me.id }, { personBId: me.id }],
         status: 'COMPLETED',
         watchLoggedAt: null,
-        completedAt: { gte: since },
+        completedAt: { gte: since, lte: settled },
       },
       orderBy: { completedAt: 'desc' },
       take: 5,

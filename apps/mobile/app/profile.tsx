@@ -16,6 +16,7 @@ export default function Profile() {
   const deleteAccount = useAuthStore((s) => s.deleteAccount);
   const router = useRouter();
 
+  const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [region, setRegion] = useState<Region>(user?.region ?? 'IN');
   const [selected, setSelected] = useState<string[]>(user?.services ?? []);
   const [error, setError] = useState('');
@@ -31,7 +32,10 @@ export default function Profile() {
 
   if (!user) return null;
 
+  const trimmedName = displayName.trim();
+  const nameChanged = trimmedName.length > 0 && trimmedName !== user.displayName;
   const dirty =
+    nameChanged ||
     region !== user.region ||
     selected.length !== user.services.length ||
     selected.some((id) => !user.services.includes(id));
@@ -52,7 +56,11 @@ export default function Profile() {
     setBusy(true);
     setError('');
     try {
-      await updateMe({ region, services: selected });
+      await updateMe({
+        ...(nameChanged && { displayName: trimmedName }),
+        region,
+        services: selected,
+      });
       setSaved(true);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not save. Try again.');
@@ -94,6 +102,31 @@ export default function Profile() {
         <Text style={s.email}>{user.email}</Text>
 
         {!!error && <FormError message={error} />}
+
+        <Pressable
+          onPress={() => router.push('/taste')}
+          style={({ pressed }) => [s.tasteLink, pressed && s.pressed]}
+        >
+          <Text style={s.tasteEmoji}>🎭</Text>
+          <View style={s.tasteBody}>
+            <Text style={s.tasteTitle}>Your taste</Text>
+            <Text style={s.tasteSub}>How in sync you two are, and what you love</Text>
+          </View>
+          <Text style={s.tasteChevron}>›</Text>
+        </Pressable>
+
+        <Text style={s.sectionLabel}>Your name</Text>
+        <TextInput
+          value={displayName}
+          onChangeText={(v) => {
+            setDisplayName(v);
+            setSaved(false);
+          }}
+          placeholder="Your name"
+          placeholderTextColor={colors.textFaint}
+          maxLength={40}
+          style={s.nameInput}
+        />
 
         <Text style={s.sectionLabel}>Region</Text>
         <View style={s.row}>
@@ -209,6 +242,35 @@ const s = StyleSheet.create({
   back: { ...type.label, color: colors.textMuted },
   content: { paddingTop: spacing.lg, paddingBottom: spacing.lg },
   email: { ...type.body, color: colors.textMuted, marginTop: spacing.sm },
+
+  tasteLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginTop: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: '#241640',
+    borderWidth: 1,
+    borderColor: colors.gold,
+  },
+  tasteEmoji: { fontSize: 24 },
+  tasteBody: { flex: 1, minWidth: 0 },
+  tasteTitle: { ...type.label, color: colors.text },
+  tasteSub: { ...type.caption, color: colors.textFaint, marginTop: 2 },
+  tasteChevron: { ...type.title, color: colors.textFaint },
+
+  nameInput: {
+    ...type.body,
+    color: colors.text,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    height: 52,
+  },
+
   sectionLabel: {
     ...type.label,
     color: colors.textMuted,

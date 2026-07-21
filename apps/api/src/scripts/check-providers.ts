@@ -1,4 +1,4 @@
-import { REGIONS, STREAMING_SERVICES } from '@watchly/shared';
+import { REGIONS, STREAMING_SERVICES, providerIdsInRegion } from '@watchly/shared';
 import { providersInRegion } from '../lib/tmdb.js';
 
 /**
@@ -22,21 +22,23 @@ async function main() {
     console.log(`\n=== ${region} (${live.size} providers live on TMDB) ===`);
 
     for (const svc of STREAMING_SERVICES) {
-      const id = svc.tmdbProviderIds[region];
-      if (id === undefined) continue; // Not offered here — nothing to check.
+      const ids = providerIdsInRegion(svc, region);
+      if (ids.length === 0) continue; // Not offered here — nothing to check.
 
-      const actual = live.get(id);
-      if (actual) {
-        console.log(`  OK    ${svc.label.padEnd(14)} id=${id} -> "${actual}"`);
-      } else {
-        // Suggest what the id probably should be, by name.
-        const guess = [...live.entries()].find(([, name]) =>
-          name.toLowerCase().includes(svc.label.toLowerCase().split(' ')[0]!),
-        );
-        console.log(
-          `  WRONG ${svc.label.padEnd(14)} id=${id} not in ${region}.` +
-            (guess ? ` Did you mean ${guess[0]} ("${guess[1]}")?` : ' No name match either.'),
-        );
+      for (const id of ids) {
+        const actual = live.get(id);
+        if (actual) {
+          console.log(`  OK    ${svc.label.padEnd(14)} id=${id} -> "${actual}"`);
+        } else {
+          // Suggest what the id probably should be, by name.
+          const guess = [...live.entries()].find(([, name]) =>
+            name.toLowerCase().includes(svc.label.toLowerCase().split(' ')[0]!),
+          );
+          console.log(
+            `  WRONG ${svc.label.padEnd(14)} id=${id} not in ${region}.` +
+              (guess ? ` Did you mean ${guess[0]} ("${guess[1]}")?` : ' No name match either.'),
+          );
+        }
       }
     }
   }

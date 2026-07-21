@@ -87,11 +87,15 @@ export interface TasteProfile {
   nights: number;
   swiped: number;
   yes: number;
+  /** Titles the user marked as already seen. */
+  seen: number;
   /** 0..1 — share of the user's own swipes that were a yes. */
   yesRate: number;
   /** 0..1 — of everything either person liked, how much both did. Null if none yet. */
   agreement: number | null;
   watchedTogether: number;
+  /** The most recent match you actually watched, from the watch-loop. */
+  lastWatched: { id: string; title: string; posterUrl: string | null } | null;
   loves: { genre: string; count: number }[];
 }
 

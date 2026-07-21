@@ -70,11 +70,25 @@ export const DEFAULT_REGION: Region = 'IN';
 export interface StreamingService {
   id: string;
   label: string;
-  tmdbProviderIds: Partial<Record<Region, number>>;
+  /**
+   * TMDB provider id(s) per region. Usually one, but some services are split
+   * across several ids TMDB never merged — Paramount+ into Premium/Essential
+   * tiers, Peacock into Premium/Premium Plus. A title can be tagged with any of
+   * them, so we map ALL of them to this one service or the filter silently misses
+   * titles that stream on a tier we didn't list.
+   */
+  tmdbProviderIds: Partial<Record<Region, number | number[]>>;
   androidPackage: string;
   iosScheme: string;
   /** Brand colour, used for the service chips and result-card logos. */
   color: string;
+}
+
+/** Every TMDB provider id a service uses in a region, normalised to an array. */
+export function providerIdsInRegion(service: StreamingService, region: Region): number[] {
+  const ids = service.tmdbProviderIds[region];
+  if (ids === undefined) return [];
+  return Array.isArray(ids) ? ids : [ids];
 }
 
 export const STREAMING_SERVICES: StreamingService[] = [
@@ -136,6 +150,91 @@ export const STREAMING_SERVICES: StreamingService[] = [
     androidPackage: 'com.disney.disneyplus',
     iosScheme: 'disneyplus://',
     color: '#113CCF',
+  },
+  // ---- Cross-region niche subscriptions ----
+  {
+    id: 'crunchyroll',
+    label: 'Crunchyroll',
+    tmdbProviderIds: { IN: 283, US: 283 },
+    androidPackage: 'com.crunchyroll.crunchyroid',
+    iosScheme: 'crunchyroll://',
+    color: '#F47521',
+  },
+  {
+    id: 'mubi',
+    label: 'MUBI',
+    tmdbProviderIds: { IN: 11, US: 11 },
+    androidPackage: 'com.mubi',
+    iosScheme: 'mubi://',
+    color: '#4C6EF5',
+  },
+  // ---- India (primary market) ----
+  {
+    id: 'sunnxt',
+    label: 'Sun NXT',
+    tmdbProviderIds: { IN: 309 },
+    androidPackage: 'com.suntv.sunnxt',
+    iosScheme: 'sunnxt://',
+    color: '#ED1C24',
+  },
+  {
+    id: 'aha',
+    label: 'aha',
+    tmdbProviderIds: { IN: 532 },
+    androidPackage: 'com.valuelabs.aha',
+    iosScheme: 'aha://',
+    color: '#F94E3F',
+  },
+  {
+    id: 'hoichoi',
+    label: 'hoichoi',
+    tmdbProviderIds: { IN: 315 },
+    androidPackage: 'com.viewlift.hoichoi',
+    iosScheme: 'hoichoi://',
+    color: '#E63946',
+  },
+  {
+    id: 'lionsgateplay',
+    label: 'Lionsgate Play',
+    tmdbProviderIds: { IN: 561 },
+    androidPackage: 'com.lionsgateplay.videoapp',
+    iosScheme: 'lionsgateplay://',
+    color: '#8E44AD',
+  },
+  // ---- United States ----
+  {
+    id: 'hulu',
+    label: 'Hulu',
+    tmdbProviderIds: { US: 15 },
+    androidPackage: 'com.hulu.plus',
+    iosScheme: 'hulu://',
+    color: '#1CE783',
+  },
+  {
+    id: 'max',
+    label: 'Max',
+    tmdbProviderIds: { US: 1899 },
+    androidPackage: 'com.wbd.stream',
+    iosScheme: 'max://',
+    color: '#7B2FF7',
+  },
+  {
+    // Split into Premium (386) and Premium Plus (387) tiers on TMDB.
+    id: 'peacock',
+    label: 'Peacock',
+    tmdbProviderIds: { US: [386, 387] },
+    androidPackage: 'com.peacocktv.peacockandroid',
+    iosScheme: 'peacock://',
+    color: '#F5A623',
+  },
+  {
+    // Split into Premium (2303) and Essential (2616) tiers on TMDB.
+    id: 'paramountplus',
+    label: 'Paramount+',
+    tmdbProviderIds: { US: [2303, 2616] },
+    androidPackage: 'com.cbs.ott',
+    iosScheme: 'paramountplus://',
+    color: '#0064FF',
   },
 ];
 
@@ -246,7 +345,63 @@ export const DURATION_FILTERS = [
   { id: 'any', label: 'Any length', maxRuntime: null },
 ] as const;
 
-/** How many titles each person swipes in a session. */
+/**
+ * How recent must it be? `sinceYears` is relative to the current year so these
+ * never go stale — 0 means "released this calendar year", 5 means "in the last
+ * five years". null is no lower bound at all.
+ */
+export const ERA_FILTERS = [
+  { id: 'any', label: 'Any era', sinceYears: null },
+  { id: 'new', label: '🆕 New', sinceYears: 0 },
+  { id: 'recent', label: 'Last 5 years', sinceYears: 5 },
+  { id: 'modern', label: 'Last 15 years', sinceYears: 15 },
+] as const;
+export type EraId = (typeof ERA_FILTERS)[number]['id'];
+
+/** Turns an era id into a minimum release year, or null for "any". */
+export function minYearForEra(id: string, now = new Date()): number | null {
+  const era = ERA_FILTERS.find((e) => e.id === id);
+  if (!era || era.sinceYears === null) return null;
+  return now.getFullYear() - era.sinceYears;
+}
+
+/** A quality floor on TMDB's average vote. null = anything goes. */
+export const RATING_FILTERS = [
+  { id: 'any', label: '🎲 Surprise us', minRating: null },
+  { id: 'decent', label: '👍 6+', minRating: 6 },
+  { id: 'great', label: '⭐ 7.5+', minRating: 7.5 },
+] as const;
+export type RatingId = (typeof RATING_FILTERS)[number]['id'];
+
+export function minRatingForId(id: string): number | null {
+  return RATING_FILTERS.find((r) => r.id === id)?.minRating ?? null;
+}
+
+/**
+ * Original language, by TMDB's ISO-639-1 code. India-first, hence Hindi and
+ * English up front; null means any language. A hard filter — stacked with genre
+ * and provider it can thin the deck, so it defaults to "any".
+ */
+export const LANGUAGE_FILTERS = [
+  { id: 'any', label: '🌍 Any language', code: null },
+  { id: 'hi', label: '🇮🇳 Hindi', code: 'hi' },
+  { id: 'en', label: '🔤 English', code: 'en' },
+] as const;
+export type LanguageId = (typeof LANGUAGE_FILTERS)[number]['id'];
+
+export function languageCodeForId(id: string): string | null {
+  return LANGUAGE_FILTERS.find((l) => l.id === id)?.code ?? null;
+}
+
+/**
+ * How many trailers each person swipes. Fifteen is the product's signature — the
+ * default and the one the copy is written around — but a quick ten or a
+ * completionist twenty are offered for the nights that want them.
+ */
+export const DECK_SIZES = [10, 15, 20] as const;
+export type DeckSize = (typeof DECK_SIZES)[number];
+
+/** How many titles each person swipes in a session, by default. */
 export const SESSION_QUEUE_SIZE = 15;
 
 /** Don't re-show a title the user swiped on within this window. */
@@ -257,6 +412,14 @@ export const NEAR_MISS_LIMIT = 5;
 
 /** How long after a matched night we still ask "did you watch it?". */
 export const WATCH_CHECK_WINDOW_DAYS = 7;
+
+/**
+ * Don't ask "did you watch it?" until the night has actually had time to happen.
+ * Firing seconds after the match — before anyone's watched anything — is nonsense
+ * and makes the "last night" framing a lie. This holds the prompt back so it lands
+ * the next morning, not in the same sitting.
+ */
+export const WATCH_CHECK_MIN_AGE_HOURS = 8;
 
 /**
  * How long an async session may sit idle before it's abandoned. Far longer than
@@ -296,6 +459,7 @@ export interface SessionSummary {
   id: string;
   mode: SessionMode;
   status: SessionStatus;
+  titleType: TitleType;
   /** The other person's name, from this caller's point of view. */
   partnerLabel: string;
   matchCount: number;
@@ -304,6 +468,13 @@ export interface SessionSummary {
   mood: string | null;
   createdAt: string;
   completedAt: string | null;
+}
+
+/** One page of the nights history, with a cursor to fetch the next. */
+export interface SessionsPage {
+  sessions: SessionSummary[];
+  /** True when another page exists. */
+  hasMore: boolean;
 }
 
 export interface AuthTokens {

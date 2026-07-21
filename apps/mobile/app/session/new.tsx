@@ -1,7 +1,16 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { DURATION_FILTERS, MOODS, WATCH_KINDS, type WatchKind } from '@watchly/shared';
+import {
+  DECK_SIZES,
+  DURATION_FILTERS,
+  ERA_FILTERS,
+  LANGUAGE_FILTERS,
+  MOODS,
+  RATING_FILTERS,
+  WATCH_KINDS,
+  type WatchKind,
+} from '@watchly/shared';
 import * as Haptics from 'expo-haptics';
 import { Button, Chip, FormError, Heading, Screen, Subheading } from '../../src/components/ui';
 import { useSessionStore } from '../../src/stores/session';
@@ -26,6 +35,10 @@ export default function NewSession() {
   const [kind, setKind] = useState<WatchKind>('MOVIE');
   const [mood, setMood] = useState<string | null>(null);
   const [duration, setDuration] = useState<string>('any');
+  const [era, setEra] = useState<string>('any');
+  const [rating, setRating] = useState<string>('any');
+  const [language, setLanguage] = useState<string>('any');
+  const [deckSize, setDeckSize] = useState<number>(15);
   const [personA, setPersonA] = useState(user?.displayName ?? 'Person A');
   const [personB, setPersonB] = useState('Person B');
   // Multi-device only: are both people here now, or does one swipe first and the
@@ -42,6 +55,10 @@ export default function NewSession() {
       // The server ignores this for series anyway; not sending it keeps the
       // request honest about what was actually asked for.
       maxRuntime: kind === 'MOVIE' ? maxRuntime : null,
+      era,
+      rating,
+      language,
+      deckSize,
       async: !sameDevice && asyncMode,
       ...(sameDevice && {
         personALabel: personA.trim() || 'Person A',
@@ -210,6 +227,51 @@ export default function NewSession() {
             </View>
           </>
         )}
+
+        <Text style={s.sectionLabel}>How recent?</Text>
+        <View style={s.row}>
+          {ERA_FILTERS.map((e) => (
+            <Chip key={e.id} label={e.label} selected={era === e.id} onPress={() => setEra(e.id)} />
+          ))}
+        </View>
+
+        <Text style={s.sectionLabel}>Any quality bar?</Text>
+        <View style={s.row}>
+          {RATING_FILTERS.map((r) => (
+            <Chip
+              key={r.id}
+              label={r.label}
+              selected={rating === r.id}
+              onPress={() => setRating(r.id)}
+            />
+          ))}
+        </View>
+
+        <Text style={s.sectionLabel}>Language</Text>
+        <View style={s.row}>
+          {LANGUAGE_FILTERS.map((l) => (
+            <Chip
+              key={l.id}
+              label={l.label}
+              selected={language === l.id}
+              onPress={() => setLanguage(l.id)}
+            />
+          ))}
+        </View>
+
+        {/* Fifteen is the default and the number the app is built around; the
+            others are here for the nights that want a quick round or a long one. */}
+        <Text style={s.sectionLabel}>How many {kind === 'TV' ? 'series' : 'movies'}?</Text>
+        <View style={s.row}>
+          {DECK_SIZES.map((n) => (
+            <Chip
+              key={n}
+              label={n === 15 ? `${n} (classic)` : String(n)}
+              selected={deckSize === n}
+              onPress={() => setDeckSize(n)}
+            />
+          ))}
+        </View>
       </ScrollView>
 
       <View style={s.footer}>

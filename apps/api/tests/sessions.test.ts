@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { app, auth, seedTitles, signUp } from './helpers.js';
+import { prisma } from '../src/lib/prisma.js';
+
+/** Backdate a session's completion so the watch-check's "let the night happen" floor passes. */
+const ageCompletion = (sessionId: string, hoursAgo = 12) =>
+  prisma.session.update({
+    where: { id: sessionId },
+    data: { completedAt: new Date(Date.now() - hoursAgo * 3_600_000) },
+  });
 
 async function createSession(token: string, mode: 'SAME_DEVICE' | 'MULTI_DEVICE' = 'SAME_DEVICE') {
   const res = await request(app)
@@ -150,6 +158,15 @@ describe('sessions', () => {
       await vote(a.accessToken, session.id, titles[i]!.id, 'PERSON_B', 'NO').expect(201);
     }
 
+    // Fresh off the match, the prompt is withheld — you haven't had the night yet.
+    const tooSoon = await request(app)
+      .get('/api/sessions/watch-check')
+      .set(auth(a.accessToken))
+      .expect(200);
+    expect(tooSoon.body.check).toBeNull();
+
+    // Come the morning after, it's there.
+    await ageCompletion(session.id);
     const check = await request(app)
       .get('/api/sessions/watch-check')
       .set(auth(a.accessToken))
@@ -276,6 +293,57 @@ describe('taste profile', () => {
     // Either-yes titles: {t0, t1}; both-yes: {t0} → 1/2.
     expect(res.body.agreement).toBeCloseTo(0.5);
     expect(res.body.loves[0]).toEqual({ genre: 'Comedy', count: 2 });
+  });
+});
+
+describe('history list', () => {
+  // Completes a session of the given kind so it lands in history.
+  async function completeSession(token: string, titleType: 'MOVIE' | 'TV') {
+    const created = await request(app)
+      .post('/api/sessions')
+      .set(auth(token))
+      .send({ mode: 'SAME_DEVICE', titleType })
+      .expect(201);
+    const s = created.body.session as { id: string };
+    const titles = created.body.titles as { id: string }[];
+    for (const t of titles) {
+      await vote(token, s.id, t.id, 'PERSON_A', 'NO').expect(201);
+      await vote(token, s.id, t.id, 'PERSON_B', 'NO').expect(201);
+    }
+    return s.id;
+  }
+
+  it('paginates with hasMore and filters by title type', async () => {
+    const a = await signUp('a@example.com', 'A');
+    await seedTitles(40); // movies — enough for two nights after the 30-day exclusion
+    await seedTitles(20, { type: 'TV' }); // series for the TV night
+    // 2 movie nights, 1 series night.
+    await completeSession(a.accessToken, 'MOVIE');
+    await completeSession(a.accessToken, 'MOVIE');
+    await completeSession(a.accessToken, 'TV');
+
+    // Page of 2 with a third session present → hasMore true.
+    const page1 = await request(app)
+      .get('/api/sessions?limit=2&offset=0')
+      .set(auth(a.accessToken))
+      .expect(200);
+    expect(page1.body.sessions).toHaveLength(2);
+    expect(page1.body.hasMore).toBe(true);
+
+    const page2 = await request(app)
+      .get('/api/sessions?limit=2&offset=2')
+      .set(auth(a.accessToken))
+      .expect(200);
+    expect(page2.body.sessions).toHaveLength(1);
+    expect(page2.body.hasMore).toBe(false);
+
+    // Filter to series only.
+    const tv = await request(app)
+      .get('/api/sessions?titleType=TV')
+      .set(auth(a.accessToken))
+      .expect(200);
+    expect(tv.body.sessions).toHaveLength(1);
+    expect(tv.body.sessions[0].titleType).toBe('TV');
   });
 });
 

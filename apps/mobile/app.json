@@ -50,6 +50,36 @@
         },
         {
           "package": "com.disney.disneyplus"
+        },
+        {
+          "package": "com.crunchyroll.crunchyroid"
+        },
+        {
+          "package": "com.mubi"
+        },
+        {
+          "package": "com.suntv.sunnxt"
+        },
+        {
+          "package": "com.valuelabs.aha"
+        },
+        {
+          "package": "com.viewlift.hoichoi"
+        },
+        {
+          "package": "com.lionsgateplay.videoapp"
+        },
+        {
+          "package": "com.hulu.plus"
+        },
+        {
+          "package": "com.wbd.stream"
+        },
+        {
+          "package": "com.peacocktv.peacockandroid"
+        },
+        {
+          "package": "com.cbs.ott"
         }
       ],
       "adaptiveIcon": {

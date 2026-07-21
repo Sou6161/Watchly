@@ -2,10 +2,16 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { Title } from '@prisma/client';
 import {
+  ERA_FILTERS,
+  LANGUAGE_FILTERS,
   MOOD_IDS,
+  RATING_FILTERS,
   RECENT_SWIPE_EXCLUSION_DAYS,
   REGIONS,
   SERVICE_IDS,
+  languageCodeForId,
+  minRatingForId,
+  minYearForEra,
   moodById,
   type Region,
 } from '@watchly/shared';
@@ -33,6 +39,9 @@ const querySchema = z.object({
   titleType: z.enum(['MOVIE', 'TV']).default('MOVIE'),
   mood: z.enum(MOOD_IDS as [string, ...string[]]).optional(),
   maxRuntime: z.coerce.number().int().positive().max(600).optional(),
+  era: z.enum(ERA_FILTERS.map((e) => e.id) as [string, ...string[]]).optional(),
+  rating: z.enum(RATING_FILTERS.map((r) => r.id) as [string, ...string[]]).optional(),
+  language: z.enum(LANGUAGE_FILTERS.map((l) => l.id) as [string, ...string[]]).optional(),
   limit: z.coerce.number().int().min(1).max(60).default(30),
 });
 
@@ -70,6 +79,9 @@ titlesRouter.get(
       titleType: q.titleType,
       genres: q.mood ? (moodById(q.mood)?.genres[q.titleType] ?? []) : [],
       maxRuntime: q.titleType === 'MOVIE' ? (q.maxRuntime ?? null) : null,
+      minYear: q.era ? minYearForEra(q.era) : null,
+      minRating: q.rating ? minRatingForId(q.rating) : null,
+      language: q.language ? languageCodeForId(q.language) : null,
       limit: q.limit,
     };
 

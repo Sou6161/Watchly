@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient, Title } from '@prisma/client';
-import { STREAMING_SERVICES, type Region } from '@watchly/shared';
+import { STREAMING_SERVICES, providerIdsInRegion, type Region } from '@watchly/shared';
 import { POSTER_BASE, detail, discover, genreMap, pickTrailers } from './tmdb.js';
 import { buildQueue, type QueueFilters } from './queue.js';
 import { env } from '../env.js';
@@ -48,16 +48,16 @@ const STALE_AFTER_DAYS = 7;
 const MAX_REFRESH_PER_REQUEST = 8;
 
 const providerIdsFor = (region: Region, services: string[]): number[] =>
-  STREAMING_SERVICES.filter((s) => services.includes(s.id))
-    .map((s) => s.tmdbProviderIds[region])
-    .filter((id): id is number => id !== undefined);
+  STREAMING_SERVICES.filter((s) => services.includes(s.id)).flatMap((s) =>
+    providerIdsInRegion(s, region),
+  );
 
-/** TMDB provider_id -> our service id, for this region. */
+/** TMDB provider_id -> our service id, for this region. One service may own
+ *  several provider ids (tiered services), so every one maps back to it. */
 function providerLookup(region: Region): Map<number, string> {
   const map = new Map<number, string>();
   for (const svc of STREAMING_SERVICES) {
-    const id = svc.tmdbProviderIds[region];
-    if (id !== undefined) map.set(id, svc.id);
+    for (const id of providerIdsInRegion(svc, region)) map.set(id, svc.id);
   }
   return map;
 }
@@ -124,7 +124,8 @@ async function refreshFilterWindow(
   filters: QueueFilters,
   round: number,
 ): Promise<number> {
-  const { region, services, titleType, genres, maxRuntime, limit } = filters;
+  const { region, services, titleType, genres, maxRuntime, minYear, minRating, language, limit } =
+    filters;
 
   const providerIds = providerIdsFor(region, services);
   if (providerIds.length === 0) return 0;
@@ -145,6 +146,10 @@ async function refreshFilterWindow(
     for (let p = 0; p < pages; p++) {
       const page = round * pages + p + 1;
 
+      // The release-date param is named differently per media type, so pick the
+      // right key. Fetch from Jan 1 of the floor year.
+      const dateKey = m === 'movie' ? 'primary_release_date.gte' : 'first_air_date.gte';
+
       const res = await discover(m, {
         watch_region: region,
         with_watch_providers: providerIds.join('|'),
@@ -156,6 +161,11 @@ async function refreshFilterWindow(
         ...(genreIds.length > 0 && { with_genres: genreIds.join('|') }),
         // TMDB's runtime filter is movies-only; TV is filtered in SQL afterwards.
         ...(maxRuntime !== null && m === 'movie' && { 'with_runtime.lte': String(maxRuntime) }),
+        // Fetch the same window the SQL will filter on, so we don't waste the
+        // details-fetch budget caching titles the queue would immediately drop.
+        ...(minYear !== null && { [dateKey]: `${minYear}-01-01` }),
+        ...(minRating !== null && { 'vote_average.gte': String(minRating) }),
+        ...(language !== null && { with_original_language: language }),
       });
 
       for (const item of res.results) {

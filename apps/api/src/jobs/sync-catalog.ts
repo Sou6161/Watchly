@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import { REGIONS, STREAMING_SERVICES, type Region } from '@watchly/shared';
+import { REGIONS, STREAMING_SERVICES, providerIdsInRegion, type Region } from '@watchly/shared';
 import { prisma } from '../lib/prisma.js';
 import { POSTER_BASE, detail, listPage, pickTrailers, sleep, type TmdbListItem } from '../lib/tmdb.js';
 
@@ -14,8 +14,9 @@ const PROVIDER_TO_SERVICE: Record<Region, Map<number, string>> = {
 };
 for (const svc of STREAMING_SERVICES) {
   for (const region of REGIONS) {
-    const tmdbId = svc.tmdbProviderIds[region];
-    if (tmdbId !== undefined) PROVIDER_TO_SERVICE[region].set(tmdbId, svc.id);
+    for (const tmdbId of providerIdsInRegion(svc, region)) {
+      PROVIDER_TO_SERVICE[region].set(tmdbId, svc.id);
+    }
   }
 }
 
