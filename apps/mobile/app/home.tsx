@@ -77,6 +77,11 @@ export default function Home() {
   return (
     <Screen>
       <View style={s.topBar}>
+        <Link href="/watchlist" asChild>
+          <Pressable hitSlop={12} style={{ marginRight: 16 }}>
+            <Text style={s.profileLink}>List</Text>
+          </Pressable>
+        </Link>
         <Link href="/taste" asChild>
           <Pressable hitSlop={12} style={{ marginRight: 16 }}>
             <Text style={s.profileLink}>Taste</Text>
@@ -130,6 +135,12 @@ export default function Home() {
           <Button
             label="Join with a code"
             onPress={() => router.push('/session/join')}
+            variant="ghost"
+          />
+          {/* The lazy-night escape hatch: one pick, no swiping. */}
+          <Button
+            label="🎲  Surprise us"
+            onPress={() => router.push('/surprise')}
             variant="ghost"
           />
         </View>

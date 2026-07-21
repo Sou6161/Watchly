@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { Heading, Screen } from '../src/components/ui';
+import { Button, Heading, Screen } from '../src/components/ui';
 import { EmptyState, ErrorState } from '../src/components/states';
 import { useUser } from '../src/stores/auth';
 import { api } from '../src/lib/api';
@@ -75,6 +75,7 @@ export default function Taste() {
 }
 
 function Profile({ profile, name }: { profile: TasteProfile; name: string }) {
+  const router = useRouter();
   const agreementPct = profile.agreement === null ? null : Math.round(profile.agreement * 100);
   const yesPct = Math.round(profile.yesRate * 100);
 
@@ -95,6 +96,28 @@ function Profile({ profile, name }: { profile: TasteProfile; name: string }) {
           </>
         )}
       </Animated.View>
+
+      {/* Weekly rhythm — the returning ritual. A live streak is a reason to come
+          back this week; a broken one is a gentle nudge, never a scold. */}
+      {(profile.streakWeeks > 0 || profile.thisWeek > 0) && (
+        <Animated.View entering={FadeInDown.duration(400)} style={s.recap}>
+          <Text style={s.recapFlame}>{profile.streakWeeks > 0 ? '🔥' : '🎬'}</Text>
+          <View style={s.recapBody}>
+            <Text style={s.recapTitle}>
+              {profile.streakWeeks > 1
+                ? `${profile.streakWeeks}-week streak`
+                : profile.streakWeeks === 1
+                  ? 'On a roll this week'
+                  : 'Pick up where you left off'}
+            </Text>
+            <Text style={s.recapSub}>
+              {profile.thisWeek > 0
+                ? `${profile.thisWeek} night${profile.thisWeek === 1 ? '' : 's'} in the last 7 days`
+                : 'A night this week keeps the streak alive'}
+            </Text>
+          </View>
+        </Animated.View>
+      )}
 
       <View style={s.stats}>
         <Stat value={String(profile.nights)} label={profile.nights === 1 ? 'night' : 'nights'} />
@@ -144,6 +167,15 @@ function Profile({ profile, name }: { profile: TasteProfile; name: string }) {
           </View>
         </Animated.View>
       )}
+
+      {/* Only offer the share card once there's a real number to show off. */}
+      {agreementPct !== null && (
+        <Button
+          label="📸  Share our sync"
+          variant="ghost"
+          onPress={() => router.push('/share-taste')}
+        />
+      )}
     </View>
   );
 }
@@ -183,6 +215,21 @@ const s = StyleSheet.create({
   },
   heroBig: { ...type.hero, fontSize: 64, lineHeight: 68, color: colors.gold },
   heroCaption: { ...type.body, color: colors.textMuted, marginTop: spacing.sm, textAlign: 'center', paddingHorizontal: spacing.lg },
+
+  recap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.card,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  recapFlame: { fontSize: 28 },
+  recapBody: { flex: 1, minWidth: 0 },
+  recapTitle: { ...type.label, color: colors.text },
+  recapSub: { ...type.caption, color: colors.textFaint, marginTop: 2 },
 
   stats: { flexDirection: 'row', gap: spacing.sm },
   stat: {

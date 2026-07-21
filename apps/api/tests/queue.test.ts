@@ -155,6 +155,21 @@ describe('title queue', () => {
     expect(res.body.titles).toHaveLength(3);
   });
 
+  it('surprise returns a single watchable pick', async () => {
+    const a = await signUp('a@example.com', 'A');
+    await seedTitles(10);
+
+    const res = await request(app)
+      .get('/api/titles/surprise')
+      .set(auth(a.accessToken))
+      .expect(200);
+
+    expect(res.body.title).toBeDefined();
+    expect(res.body.title.id).toBeTruthy();
+    // Never leaks the plot synopsis onto a pick, same as every other card.
+    expect(res.body.title.overview).toBeUndefined();
+  });
+
   it('rejects an unknown service', async () => {
     const a = await signUp('a@example.com', 'A');
     await request(app)

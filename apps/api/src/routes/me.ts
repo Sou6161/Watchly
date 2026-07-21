@@ -48,6 +48,7 @@ meRouter.get(
       select: {
         personAId: true,
         watchedTitleId: true,
+        completedAt: true,
         votes: {
           select: {
             voter: true,
@@ -111,6 +112,23 @@ meRouter.get(
       .slice(0, 6)
       .map(([genre, count]) => ({ genre, count }));
 
+    // Weekly rhythm. Bucket each night into a 7-day window counting back from now
+    // (bucket 0 = the last 7 days). "This week" is bucket 0; the streak is the run
+    // of consecutive non-empty buckets from 0 — miss a week and it resets, which
+    // is exactly the nudge that makes a streak worth keeping.
+    const WEEK_MS = 7 * 86_400_000;
+    const now = Date.now();
+    const buckets = new Set<number>();
+    for (const s of sessions) {
+      if (!s.completedAt) continue;
+      buckets.add(Math.floor((now - s.completedAt.getTime()) / WEEK_MS));
+    }
+    const thisWeek = [...sessions].filter(
+      (s) => s.completedAt && now - s.completedAt.getTime() < WEEK_MS,
+    ).length;
+    let streakWeeks = 0;
+    while (buckets.has(streakWeeks)) streakWeeks++;
+
     // The last thing you actually finished a night on — the loop closed. Shown as
     // a poster on the taste screen, so the number "watched together" has a face.
     const lastWatched = lastWatchedTitleId
@@ -131,6 +149,8 @@ meRouter.get(
       agreement: eitherYesTotal > 0 ? bothYesTotal / eitherYesTotal : null,
       watchedTogether,
       lastWatched,
+      thisWeek,
+      streakWeeks,
       loves,
     });
   }),

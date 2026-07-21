@@ -296,6 +296,37 @@ describe('taste profile', () => {
   });
 });
 
+describe('watchlist', () => {
+  it('collects the caller’s MAYBE swipes, deduped and newest-first', async () => {
+    const a = await signUp('a@example.com', 'A');
+    await seedTitles(20);
+    const created = await request(app)
+      .post('/api/sessions')
+      .set(auth(a.accessToken))
+      .send({ mode: 'SAME_DEVICE', titleType: 'MOVIE' })
+      .expect(201);
+    const session = created.body.session as { id: string };
+    const titles = created.body.titles as { id: string }[];
+
+    await vote(a.accessToken, session.id, titles[0]!.id, 'PERSON_A', 'MAYBE').expect(201);
+    await vote(a.accessToken, session.id, titles[1]!.id, 'PERSON_A', 'MAYBE').expect(201);
+    await vote(a.accessToken, session.id, titles[2]!.id, 'PERSON_A', 'YES').expect(201);
+    // A guest's MAYBE (person B) must NOT show up in person A's own list.
+    await vote(a.accessToken, session.id, titles[3]!.id, 'PERSON_B', 'MAYBE').expect(201);
+
+    const res = await request(app)
+      .get('/api/titles/watchlist')
+      .set(auth(a.accessToken))
+      .expect(200);
+
+    const ids = res.body.titles.map((t: { id: string }) => t.id);
+    expect(ids).toContain(titles[0]!.id);
+    expect(ids).toContain(titles[1]!.id);
+    expect(ids).not.toContain(titles[2]!.id); // that was a YES
+    expect(ids).not.toContain(titles[3]!.id); // that was the guest's maybe
+  });
+});
+
 describe('history list', () => {
   // Completes a session of the given kind so it lands in history.
   async function completeSession(token: string, titleType: 'MOVIE' | 'TV') {

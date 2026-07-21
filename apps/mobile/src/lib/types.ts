@@ -96,6 +96,10 @@ export interface TasteProfile {
   watchedTogether: number;
   /** The most recent match you actually watched, from the watch-loop. */
   lastWatched: { id: string; title: string; posterUrl: string | null } | null;
+  /** Completed nights in the last 7 days. */
+  thisWeek: number;
+  /** Consecutive weeks (counting back from now) with at least one night. */
+  streakWeeks: number;
   loves: { genre: string; count: number }[];
 }
 
