@@ -173,18 +173,33 @@ export function providersInRegion(media: 'movie' | 'tv', region: string) {
   );
 }
 
+/** Many titles today ship a teaser, a trailer, AND a "final trailer" — this caps
+ * how many we keep so the picker in the app never has to scroll. */
+const MAX_TRAILERS = 3;
+
 /**
- * Picks the trailer to autoplay. Prefers an official YouTube "Trailer"; falls
- * back to a teaser, then to any YouTube video. Titles with nothing playable get
- * dropped from the catalog entirely — a card with no trailer is a dead card.
+ * Ranks the playable trailers/teasers for a title, official and highest-res
+ * first, and keeps the top few. Titles with nothing playable get dropped from
+ * the catalog entirely — a card with no trailer is a dead card.
  */
-export function pickTrailer(videos: TmdbVideo[]): string | null {
+export function pickTrailers(videos: TmdbVideo[]): string[] {
   const youtube = videos.filter((v) => v.site === 'YouTube' && v.key);
   const rank = (v: TmdbVideo) => {
     if (v.type === 'Trailer') return v.official ? 0 : 1;
     if (v.type === 'Teaser') return v.official ? 2 : 3;
     return 4;
   };
-  const best = youtube.sort((a, b) => rank(a) - rank(b) || b.size - a.size)[0];
-  return best?.key ?? null;
+  const ranked = youtube.sort((a, b) => rank(a) - rank(b) || b.size - a.size);
+
+  // A title can list the same YouTube video twice (region duplicates); keep
+  // only the first, best-ranked occurrence of each key.
+  const seen = new Set<string>();
+  const keys: string[] = [];
+  for (const v of ranked) {
+    if (seen.has(v.key)) continue;
+    seen.add(v.key);
+    keys.push(v.key);
+    if (keys.length === MAX_TRAILERS) break;
+  }
+  return keys;
 }

@@ -102,7 +102,7 @@ export function toPublicTitle(t: Title) {
     type: t.type,
     title: t.title,
     posterUrl: t.posterUrl,
-    trailerYoutubeId: t.trailerYoutubeId,
+    trailerYoutubeIds: t.trailerYoutubeIds,
     genres: t.genres,
     releaseYear: t.releaseYear,
     runtime: t.runtime,

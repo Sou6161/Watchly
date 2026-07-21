@@ -16,7 +16,9 @@ export interface PublicTitle {
   type: TitleType;
   title: string;
   posterUrl: string | null;
-  trailerYoutubeId: string;
+  // Ranked, official-first — the card plays [0]; the modal offers a picker
+  // when there's more than one.
+  trailerYoutubeIds: string[];
   genres: string[];
   releaseYear: number | null;
   runtime: number | null;

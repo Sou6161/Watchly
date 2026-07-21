@@ -119,7 +119,10 @@ model Title {
 
   title           String
   posterUrl       String?
-  trailerYoutubeId String
+  // Ranked, official-first — up to 3. A YouTube "key" per trailer/teaser found
+  // for this title; card art shows the first, the modal offers a picker for the
+  // rest when a title has more than one.
+  trailerYoutubeIds String[]
   genres          String[] @default([])
   releaseYear     Int?
   runtime         Int?

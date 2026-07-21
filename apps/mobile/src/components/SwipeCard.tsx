@@ -13,10 +13,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import YoutubePlayer from 'react-native-youtube-iframe';
 import type { Decision } from '@watchly/shared';
 import type { PublicTitle } from '../lib/types';
 import { track } from '../lib/analytics';
+import { TrailerModal } from './TrailerModal';
 import { colors, radii, spacing, type } from '../theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -35,16 +35,6 @@ const VELOCITY_THRESHOLD = 700;
 
 /** Spring config tuned for a card with weight — settles fast, no wobble. */
 const SPRING = { damping: 18, stiffness: 180, mass: 0.9 } as const;
-
-/**
- * Video dimensions for a cover-crop. YouTube's iframe is immovably 16:9, so to
- * fill a portrait card we size it by HEIGHT and let the width overflow, then
- * centre it. Sizing by width instead would letterbox a 16:9 band across the top
- * with the poster visible below — which is exactly what it did before.
- */
-const VIDEO_H = CARD_H;
-const VIDEO_W = CARD_H * (16 / 9);
-const VIDEO_OFFSET_X = (CARD_W - VIDEO_W) / 2; // negative: overflows both sides
 
 /** Resting scale/offset of the card behind the top one — what makes it a deck. */
 const BACK_SCALE = 0.93;
@@ -81,43 +71,19 @@ export function SwipeCard({ title, onDecide, isTop, deckProgress }: Props) {
    * reversed after seeing it on device, where the snap from poster to video felt
    * jumpy. Deliberate reversal, not an oversight.)
    */
-  const [requested, setRequested] = useState(false);
-  const [trailerFailed, setTrailerFailed] = useState(false);
-  const [trailerReady, setTrailerReady] = useState(false);
+  const [trailerOpen, setTrailerOpen] = useState(false);
 
-  // Only the top card may play. When this card is buried by the next one — or
-  // swiped away — the trailer stops dead, so no audio bleeds between cards.
-  const playing = requested && isTop && !trailerFailed;
-
+  // Close the trailer if this card stops being the top one — a modal belonging to
+  // a card that has already been swiped away would be stranded on screen.
   useEffect(() => {
-    if (!isTop) {
-      setRequested(false);
-      setTrailerReady(false);
-    }
+    if (!isTop) setTrailerOpen(false);
   }, [isTop]);
 
-  const toggleTrailer = () => {
+  const openTrailer = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setRequested((prev) => {
-      // Only the opt-IN is interesting: tap-to-play replaced autoplay, so this is
-      // how we learn whether people actually want the trailer.
-      if (!prev) track.trailerPlayed();
-      return !prev;
-    });
+    track.trailerPlayed();
+    setTrailerOpen(true);
   };
-
-  /**
-   * The trailer fades in only once the player reports ready. Until then the card
-   * shows the poster alone — never the poster with a half-loaded YouTube frame
-   * and its "Watch on YouTube" chrome sitting on top of it.
-   */
-  const videoOpacity = useSharedValue(0);
-
-  useEffect(() => {
-    videoOpacity.value = withTiming(trailerReady && playing ? 1 : 0, { duration: 420 });
-  }, [trailerReady, playing, videoOpacity]);
-
-  const videoStyle = useAnimatedStyle(() => ({ opacity: videoOpacity.value }));
 
   /** Light tap the instant the swipe crosses into committal territory. */
   const tick = () => {
@@ -216,7 +182,7 @@ export function SwipeCard({ title, onDecide, isTop, deckProgress }: Props) {
     // a few pixels from registering as a tap and firing the trailer mid-swipe.
     .maxDistance(12)
     .onEnd((_e, success) => {
-      if (success) runOnJS(toggleTrailer)();
+      if (success) runOnJS(openTrailer)();
     });
 
   // Exclusive, with pan first: if the finger moves, it's a swipe and the tap is
@@ -255,68 +221,22 @@ export function SwipeCard({ title, onDecide, isTop, deckProgress }: Props) {
   return (
     <GestureDetector gesture={gesture}>
       <Animated.View style={[s.card, isTop ? cardStyle : backStyle]}>
-        {/* Poster is the base layer and the fallback: it must be visible before
-            the trailer loads, and stay visible if the trailer never does. */}
+        {/* The poster IS the card. The trailer used to try to play behind it,
+            which could never work — see TrailerModal for why. Tapping opens a real
+            player instead. */}
         {title.posterUrl ? (
           <Image source={{ uri: title.posterUrl }} style={s.poster} resizeMode="cover" />
         ) : (
           <View style={[s.poster, s.posterEmpty]} />
         )}
 
-        {/* Mounted only once the trailer is actually asked for. Mounting it on the
-            top card regardless would have the WebView fetch and buffer YouTube in
-            the background behind a transparent layer — wasted data on a deck of
-            fifteen cards the user may never tap. */}
-        {isTop && requested && !trailerFailed && (
-          // Cropped to COVER the card. The iframe is locked to 16:9, so sizing it
-          // to the card's width would fill only a band across the top and let the
-          // poster show through underneath. Instead we make it tall enough to fill
-          // the card, let it overflow the sides, and centre it — the card's
-          // overflow:hidden does the cropping.
-          <Animated.View
-            style={[s.video, videoStyle]}
-            pointerEvents="none"
-            needsOffscreenAlphaCompositing
-          >
-            <YoutubePlayer
-              height={VIDEO_H}
-              width={VIDEO_W}
-              play={playing}
-              videoId={title.trailerYoutubeId}
-              // Spec: trailers autoplay WITH sound. Two people on a couch want to
-              // hear it. 50% so it's present without being a jump-scare.
-              volume={50}
-              initialPlayerParams={{
-                controls: false,
-                modestbranding: true,
-                rel: false,
-                // Without this the video goes fullscreen on Android instead of
-                // playing inside the card.
-                playsinline: true,
-              }}
-              onReady={() => setTrailerReady(true)}
-              onError={() => setTrailerFailed(true)}
-              onChangeState={(state: string) => {
-                // 'unstarted' after a play attempt means the platform blocked
-                // autoplay. Rather than sit on YouTube's branded thumbnail, drop
-                // back to the poster — it looks deliberate instead of broken.
-                if (state === 'ended') setTrailerReady(false);
-              }}
-              webViewProps={{
-                androidLayerType: 'hardware',
-                // The reason autoplay was silently failing: Android's WebView
-                // refuses to start media without a user gesture unless told
-                // otherwise, so `play` had no effect and YouTube showed its
-                // thumbnail + play button instead.
-                mediaPlaybackRequiresUserAction: false,
-                allowsInlineMediaPlayback: true,
-                allowsFullscreenVideo: false,
-                scrollEnabled: false,
-              }}
-              webViewStyle={s.webView}
-            />
-          </Animated.View>
-        )}
+        {/* The poster: base layer, fallback, and cover. Fades out once the trailer
+            is genuinely playing, rather than the trailer fading in. */}
+          {title.posterUrl ? (
+            <Image source={{ uri: title.posterUrl }} style={s.poster} resizeMode="cover" />
+          ) : (
+            <View style={[s.poster, s.posterEmpty]} />
+          )}
 
         {/* Scrim: keeps the metadata legible over any poster or trailer frame. */}
         <LinearGradient
@@ -327,8 +247,8 @@ export function SwipeCard({ title, onDecide, isTop, deckProgress }: Props) {
         />
 
         {/* Without an affordance, tap-to-play is invisible — nobody taps a poster
-            on spec. Hidden once the trailer is actually up. */}
-        {isTop && !playing && !trailerFailed && (
+            on spec. */}
+        {isTop && (
           <Animated.View
             entering={FadeIn.duration(300)}
             style={s.playHint}
@@ -350,6 +270,14 @@ export function SwipeCard({ title, onDecide, isTop, deckProgress }: Props) {
           <Text style={s.facts}>{facts(title)}</Text>
           {/* No plot synopsis, by design — it would be a spoiler. */}
         </View>
+        {isTop && (
+          <TrailerModal
+            visible={trailerOpen}
+            videoIds={title.trailerYoutubeIds}
+            title={title.title}
+            onClose={() => setTrailerOpen(false)}
+          />
+        )}
       </Animated.View>
     </GestureDetector>
   );
@@ -419,18 +347,6 @@ const s = StyleSheet.create({
   poster: { ...FILL, width: CARD_W, height: CARD_H },
   posterEmpty: { backgroundColor: colors.purple },
 
-  // Overflows the card horizontally so the 16:9 video covers the portrait card;
-  // the card's overflow:hidden crops the excess.
-  video: {
-    position: 'absolute',
-    top: 0,
-    left: VIDEO_OFFSET_X,
-    width: VIDEO_W,
-    height: VIDEO_H,
-  },
-  // The WebView paints white before the player renders, which flashes through
-  // the fade. Transparent keeps the poster showing underneath instead.
-  webView: { backgroundColor: 'transparent', opacity: 0.999 },
 
   scrim: { ...FILL },
 

@@ -13,7 +13,7 @@ describe('title queue', () => {
         tmdbId: 9001,
         type: 'MOVIE',
         title: 'Disney Only (US)',
-        trailerYoutubeId: 'x',
+        trailerYoutubeIds: ['x'],
         genres: ['Comedy'],
         popularity: 999, // deliberately the most popular — must STILL be excluded
         watchProviders: { US: { flatrate: ['disneyplus'] } },
@@ -24,7 +24,7 @@ describe('title queue', () => {
         tmdbId: 9002,
         type: 'MOVIE',
         title: 'Sony India (not subscribed)',
-        trailerYoutubeId: 'y',
+        trailerYoutubeIds: ['y'],
         genres: ['Comedy'],
         popularity: 999,
         watchProviders: { IN: { flatrate: ['sonyliv'] } },

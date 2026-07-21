@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient, Title } from '@prisma/client';
 import { STREAMING_SERVICES, type Region } from '@watchly/shared';
-import { POSTER_BASE, detail, discover, genreMap, pickTrailer } from './tmdb.js';
+import { POSTER_BASE, detail, discover, genreMap, pickTrailers } from './tmdb.js';
 import { buildQueue, type QueueFilters } from './queue.js';
 import { env } from '../env.js';
 
@@ -282,8 +282,8 @@ async function buildTitleRow(
 
   // No trailer, no card. This is the filter TMDB can't do for us, and it drops
   // roughly half of everything — which is exactly why we over-fetch.
-  const trailerYoutubeId = pickTrailer(d.videos?.results ?? []);
-  if (!trailerYoutubeId) return null;
+  const trailerYoutubeIds = pickTrailers(d.videos?.results ?? []);
+  if (trailerYoutubeIds.length === 0) return null;
 
   const watchProviders = mapProviders(d, lookup, region);
   if (!watchProviders[region]?.flatrate.length) return null;
@@ -296,7 +296,7 @@ async function buildTitleRow(
     type: media === 'movie' ? 'MOVIE' : 'TV',
     title: item.title ?? item.name ?? 'Untitled',
     posterUrl: item.poster_path ? `${POSTER_BASE}${item.poster_path}` : null,
-    trailerYoutubeId,
+    trailerYoutubeIds,
     genres: d.genres.map((g) => g.name),
     releaseYear: date ? Number(date.slice(0, 4)) : null,
     runtime: runtime ?? null,

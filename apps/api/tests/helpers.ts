@@ -46,7 +46,7 @@ export async function seedTitles(count: number, overrides: Partial<Prisma.TitleC
         data: {
           type: 'MOVIE' as const,
           title: `Test Title ${tmdbId}`,
-          trailerYoutubeId: `yt${tmdbId}`,
+          trailerYoutubeIds: [`yt${tmdbId}`],
           posterUrl: `https://example.com/${tmdbId}.jpg`,
           genres: ['Comedy'],
           releaseYear: 2020,

@@ -49,6 +49,12 @@ export default function Home() {
   return (
     <Screen>
       <View style={s.topBar}>
+        {/* TEMPORARY — remove with app/debug-trailer.tsx */}
+        <Link href="/debug-trailer" asChild>
+          <Pressable hitSlop={12} style={{ marginRight: 16 }}>
+            <Text style={s.profileLink}>Debug</Text>
+          </Pressable>
+        </Link>
         <Link href="/profile" asChild>
           <Pressable hitSlop={12}>
             <Text style={s.profileLink}>Profile</Text>
@@ -193,7 +199,7 @@ function formatWhen(iso: string | null): string {
 }
 
 const s = StyleSheet.create({
-  topBar: { alignItems: 'flex-end', paddingTop: spacing.sm },
+  topBar: { flexDirection: 'row', justifyContent: 'flex-end', paddingTop: spacing.sm },
   profileLink: { ...type.label, color: colors.textMuted },
   content: { paddingTop: spacing.xl, paddingBottom: spacing.xl },
 

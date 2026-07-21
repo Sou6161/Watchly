@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { REGIONS, STREAMING_SERVICES, type Region } from '@watchly/shared';
 import { prisma } from '../lib/prisma.js';
-import { POSTER_BASE, detail, listPage, pickTrailer, sleep, type TmdbListItem } from '../lib/tmdb.js';
+import { POSTER_BASE, detail, listPage, pickTrailers, sleep, type TmdbListItem } from '../lib/tmdb.js';
 
 /**
  * TMDB provider_id -> our internal service id, per region. Must be per-region:
@@ -116,8 +116,8 @@ async function upsertTitle({ tmdbId, media, item }: Candidate): Promise<'cached'
 
   // No trailer, no card. This is the single biggest filter in the pipeline —
   // swiping on a title you can't watch a trailer for is the whole product failing.
-  const trailerYoutubeId = pickTrailer(d.videos?.results ?? []);
-  if (!trailerYoutubeId) return 'skipped';
+  const trailerYoutubeIds = pickTrailers(d.videos?.results ?? []);
+  if (trailerYoutubeIds.length === 0) return 'skipped';
 
   const watchProviders = mapProviders(d);
 
@@ -134,7 +134,7 @@ async function upsertTitle({ tmdbId, media, item }: Candidate): Promise<'cached'
   const data = {
     title: item.title ?? item.name ?? 'Untitled',
     posterUrl: item.poster_path ? `${POSTER_BASE}${item.poster_path}` : null,
-    trailerYoutubeId,
+    trailerYoutubeIds,
     genres: d.genres.map((g) => g.name),
     releaseYear: date ? Number(date.slice(0, 4)) : null,
     runtime: runtime ?? null,
