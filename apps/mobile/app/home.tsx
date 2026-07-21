@@ -5,8 +5,10 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import { moodById, serviceById, type SessionSummary } from '@watchly/shared';
 import { Button, Heading, Screen, Subheading } from '../src/components/ui';
 import { EmptyState, ErrorState, HistoryRowSkeleton } from '../src/components/states';
+import { WatchCheckCard } from '../src/components/WatchCheckCard';
 import { useUser } from '../src/stores/auth';
 import { api } from '../src/lib/api';
+import type { ActiveResponse, ActiveSession, WatchCheck, WatchCheckResponse } from '../src/lib/types';
 import { colors, radii, spacing, type } from '../src/theme';
 
 export default function Home() {
@@ -15,6 +17,8 @@ export default function Home() {
 
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
   const [historyFailed, setHistoryFailed] = useState(false);
+  const [watchCheck, setWatchCheck] = useState<WatchCheck | null>(null);
+  const [active, setActive] = useState<ActiveSession[]>([]);
   const [reloadKey, setReloadKey] = useState(0);
 
   // Refetch on focus, not just on mount: coming back from a finished session
@@ -36,6 +40,28 @@ export default function Home() {
           setHistoryFailed(true);
         }
       })();
+
+      // The watch-loop prompt, fetched independently so a slow or failed check
+      // never delays the history or the buttons — it's a bonus, not the screen.
+      (async () => {
+        try {
+          const res = await api<WatchCheckResponse>('/api/sessions/watch-check');
+          if (!cancelled) setWatchCheck(res.check);
+        } catch {
+          if (!cancelled) setWatchCheck(null);
+        }
+      })();
+
+      // Open async sessions — "waiting on them to finish". Also independent.
+      (async () => {
+        try {
+          const res = await api<ActiveResponse>('/api/sessions/active');
+          if (!cancelled) setActive(res.active);
+        } catch {
+          if (!cancelled) setActive([]);
+        }
+      })();
+
       return () => {
         cancelled = true;
       };
@@ -49,10 +75,9 @@ export default function Home() {
   return (
     <Screen>
       <View style={s.topBar}>
-        {/* TEMPORARY — remove with app/debug-trailer.tsx */}
-        <Link href="/debug-trailer" asChild>
+        <Link href="/taste" asChild>
           <Pressable hitSlop={12} style={{ marginRight: 16 }}>
-            <Text style={s.profileLink}>Debug</Text>
+            <Text style={s.profileLink}>Taste</Text>
           </Pressable>
         </Link>
         <Link href="/profile" asChild>
@@ -65,6 +90,12 @@ export default function Home() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
         <Heading>Evening, {user.displayName}.</Heading>
         <Subheading>Two people, fifteen trailers, one decision.</Subheading>
+
+        {watchCheck && (
+          <View style={s.watchCheck}>
+            <WatchCheckCard check={watchCheck} onAnswered={() => setWatchCheck(null)} />
+          </View>
+        )}
 
         <View style={s.services}>
           {services.map((svc) => (
@@ -100,6 +131,23 @@ export default function Home() {
             variant="ghost"
           />
         </View>
+
+        {active.length > 0 && (
+          <View style={s.active}>
+            <Text style={s.historyLabel}>Still going</Text>
+            {active.map((a) => (
+              <ActiveRow
+                key={a.session.id}
+                active={a}
+                onPress={() =>
+                  router.push(
+                    `/session/share?code=${a.session.code}&partner=${encodeURIComponent(a.partnerLabel)}`,
+                  )
+                }
+              />
+            ))}
+          </View>
+        )}
 
         <View style={s.history}>
           {sessions === null ? (
@@ -139,6 +187,34 @@ export default function Home() {
         </View>
       </ScrollView>
     </Screen>
+  );
+}
+
+/** An open async night: "waiting on them", or "your turn" if you left cards unswiped. */
+function ActiveRow({ active, onPress }: { active: ActiveSession; onPress: () => void }) {
+  const { partnerLabel, progress, yourTurn, waitingOnPartner } = active;
+
+  const line = yourTurn
+    ? `Your turn — ${progress.personA >= progress.total ? partnerLabel : 'you'} still have cards`
+    : waitingOnPartner
+      ? `Waiting on ${partnerLabel} to finish their 15`
+      : `In progress with ${partnerLabel}`;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [s.activeRow, pressed && s.rowPressed]}
+    >
+      <Text style={s.activeIcon}>{waitingOnPartner ? '⏳' : '👉'}</Text>
+      <View style={s.rowBody}>
+        <Text style={s.rowTitle} numberOfLines={1}>
+          {line}
+        </Text>
+        <Text style={s.rowMeta}>Tap to re-send the code</Text>
+      </View>
+      <Text style={s.chevron}>›</Text>
+    </Pressable>
   );
 }
 
@@ -203,6 +279,8 @@ const s = StyleSheet.create({
   profileLink: { ...type.label, color: colors.textMuted },
   content: { paddingTop: spacing.xl, paddingBottom: spacing.xl },
 
+  watchCheck: { marginTop: spacing.xl },
+
   services: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.lg },
   serviceTag: {
     flexDirection: 'row',
@@ -217,6 +295,20 @@ const s = StyleSheet.create({
   serviceLabel: { ...type.caption, color: colors.textMuted },
 
   actions: { gap: spacing.sm, marginTop: spacing.xl },
+
+  active: { marginTop: spacing.xxl },
+  activeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: '#241640',
+    borderWidth: 1,
+    borderColor: colors.gold,
+    marginBottom: spacing.sm,
+  },
+  activeIcon: { fontSize: 22 },
 
   history: { marginTop: spacing.xxl },
   historyLabel: { ...type.label, color: colors.textMuted, marginBottom: spacing.md },

@@ -252,6 +252,19 @@ export const SESSION_QUEUE_SIZE = 15;
 /** Don't re-show a title the user swiped on within this window. */
 export const RECENT_SWIPE_EXCLUSION_DAYS = 30;
 
+/** How many near-misses the results screen offers as a tiebreaker. */
+export const NEAR_MISS_LIMIT = 5;
+
+/** How long after a matched night we still ask "did you watch it?". */
+export const WATCH_CHECK_WINDOW_DAYS = 7;
+
+/**
+ * How long an async session may sit idle before it's abandoned. Far longer than
+ * the 30-minute live timeout: the whole point of async is that person B might not
+ * pick it up until tomorrow.
+ */
+export const ASYNC_SESSION_TTL_DAYS = 7;
+
 /* ------------------------------------------------------------- api types */
 
 /** A saved recurring partner, for the one-tap "Start with X" button. */

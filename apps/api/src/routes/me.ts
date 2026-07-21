@@ -19,6 +19,102 @@ meRouter.get(
 );
 
 /**
+ * GET /api/me/taste — the couple's taste profile.
+ *
+ * Built entirely from votes already cast, so there's nothing to opt into and no
+ * new data to store: it just reflects the swiping back at people. Two lenses:
+ *
+ *   - "You love"  — the genres THIS user says yes to most (their side of a
+ *     session, never the guest's half of a same-device night).
+ *   - "In sync"   — how often, when either of you liked something, you BOTH did.
+ *     The one number that says whether you actually have compatible taste.
+ *
+ * Aggregated in memory rather than SQL: a couple has hundreds of votes, not
+ * millions, and the genre counting is a multi-valued array join that's far
+ * clearer in TypeScript than in a lateral unnest.
+ */
+meRouter.get(
+  '/taste',
+  wrap(async (req, res) => {
+    const me = (req as AuthedRequest).user;
+
+    const sessions = await prisma.session.findMany({
+      where: {
+        OR: [{ personAId: me.id }, { personBId: me.id }],
+        status: 'COMPLETED',
+      },
+      select: {
+        personAId: true,
+        watchedTitleId: true,
+        votes: {
+          select: {
+            voter: true,
+            decision: true,
+            titleId: true,
+            title: { select: { genres: true } },
+          },
+        },
+      },
+    });
+
+    let swiped = 0;
+    let yes = 0;
+    let bothYesTotal = 0;
+    let eitherYesTotal = 0;
+    let watchedTogether = 0;
+    const genreYes = new Map<string, number>();
+
+    for (const session of sessions) {
+      if (session.watchedTitleId) watchedTogether++;
+
+      // Which side is the account holder? In same-device they're always person A
+      // (person B is a guest with no account), so their taste is person A's votes.
+      const mySide = session.personAId === me.id ? 'PERSON_A' : 'PERSON_B';
+
+      const aYes = new Set<string>();
+      const bYes = new Set<string>();
+
+      for (const v of session.votes) {
+        if (v.voter === mySide) {
+          swiped++;
+          if (v.decision === 'YES') {
+            yes++;
+            for (const g of v.title.genres) genreYes.set(g, (genreYes.get(g) ?? 0) + 1);
+          }
+        }
+        if (v.decision === 'YES') {
+          (v.voter === 'PERSON_A' ? aYes : bYes).add(v.titleId);
+        }
+      }
+
+      // Agreement is a property of the couple, not of one person: of everything
+      // either of them liked, how much did they both like?
+      for (const id of new Set([...aYes, ...bYes])) {
+        eitherYesTotal++;
+        if (aYes.has(id) && bYes.has(id)) bothYesTotal++;
+      }
+    }
+
+    const loves = [...genreYes.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([genre, count]) => ({ genre, count }));
+
+    res.json({
+      nights: sessions.length,
+      swiped,
+      yes,
+      yesRate: swiped > 0 ? yes / swiped : 0,
+      // Null, not zero, when there's nothing to measure yet — the client shows a
+      // "play a few nights" state instead of a damning 0%.
+      agreement: eitherYesTotal > 0 ? bothYesTotal / eitherYesTotal : null,
+      watchedTogether,
+      loves,
+    });
+  }),
+);
+
+/**
  * DELETE /api/me — permanently delete the account.
  *
  * Not optional: App Store Guideline 5.1.1(v) requires any app offering account

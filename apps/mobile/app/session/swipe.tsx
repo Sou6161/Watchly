@@ -52,6 +52,17 @@ export default function Swipe() {
     if (phase === 'DONE') router.replace('/session/results');
   }, [phase, router]);
 
+  // Async: person A finished their deck. Hand off to the share screen with the
+  // code so person B can pick it up whenever.
+  useEffect(() => {
+    if (phase === 'ASYNC_DONE' && session) {
+      const partner = voter === 'PERSON_B' ? session.personALabel : session.personBLabel;
+      router.replace(
+        `/session/share?code=${session.code}&partner=${encodeURIComponent(partner)}`,
+      );
+    }
+  }, [phase, session, voter, router]);
+
   // The server gave up on this session (30 minutes idle). Say so plainly rather
   // than letting them keep swiping into votes that will be rejected.
   useEffect(() => {

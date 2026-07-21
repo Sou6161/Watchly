@@ -18,6 +18,9 @@ export type Phase =
   | 'PERSON_B'
   | 'SWIPING'
   | 'WAITING_FOR_PARTNER'
+  // Async: this phone finished its deck and there's nothing to wait on live —
+  // person B will pick it up whenever. The swipe screen shows the code to share.
+  | 'ASYNC_DONE'
   | 'DONE';
 
 interface SessionStore {
@@ -53,6 +56,8 @@ interface CreateOpts {
   maxRuntime?: number | null;
   personALabel?: string;
   personBLabel?: string;
+  /** Multi-device only: swipe now, let person B finish later. */
+  async?: boolean;
 }
 
 const initial = {
@@ -84,6 +89,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         titles: res.titles,
         creating: false,
         voter: 'PERSON_A',
+        // Multi-device (live or async) starts person A swiping right away; only
+        // same-device opens on the person-A name gate.
         phase: opts.mode === 'MULTI_DEVICE' ? 'SWIPING' : 'PERSON_A',
       });
       return { id: res.session.id, mode: res.session.mode };
@@ -116,10 +123,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
   },
 
-  /** Opens the socket and subscribes to this session's room. Multi-device only. */
+  /** Opens the socket and subscribes to this session's room. LIVE multi-device only. */
   connect: async () => {
     const { session } = get();
-    if (!session || session.mode !== 'MULTI_DEVICE') return;
+    // Async sessions have no live partner to sync with — no socket, no lobby.
+    if (!session || session.mode !== 'MULTI_DEVICE' || session.isAsync) return;
 
     const socket = await getSocket();
 
@@ -174,13 +182,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     const multi = session.mode === 'MULTI_DEVICE';
     const asVoter: Voter = multi ? voter : phase === 'PERSON_B' ? 'PERSON_B' : 'PERSON_A';
-
-    api(`/api/sessions/${session.id}/votes`, {
-      method: 'POST',
-      body: { titleId: title.id, voter: asVoter, decision },
-    }).catch(() => {
-      // Swallowed on purpose — see above. Losing one vote must not break the run.
-    });
+    const last = index >= titles.length - 1;
+    const asyncMulti = multi && session.isAsync;
+    const body = { titleId: title.id, voter: asVoter, decision };
 
     // Fired here rather than in the card component: every swipe funnels through
     // this one function, so there is no path that silently skips instrumentation.
@@ -192,7 +196,31 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     });
 
     const nextVotes = { ...votes, [`${asVoter}:${title.id}`]: decision };
-    const last = index >= titles.length - 1;
+
+    // The FINAL async swipe is the one case we await: its response tells us
+    // whether this swipe completed the whole session (person B was already done)
+    // or merely handed off (they haven't started). Every other swipe stays
+    // fire-and-forget so the deck never stutters on a round trip.
+    if (asyncMulti && last) {
+      let bothDone = false;
+      try {
+        const res = await api<{ progress: SessionProgressPayload }>(
+          `/api/sessions/${session.id}/votes`,
+          { method: 'POST', body },
+        );
+        bothDone = res.progress.bothDone;
+        set({ progress: res.progress });
+      } catch {
+        // Treat a failed final vote as "not complete" — the share screen invites
+        // them to come back, and the vote retries idempotently if they do.
+      }
+      set({ phase: bothDone ? 'DONE' : 'ASYNC_DONE', votes: nextVotes });
+      return;
+    }
+
+    api(`/api/sessions/${session.id}/votes`, { method: 'POST', body }).catch(() => {
+      // Swallowed on purpose — see above. Losing one vote must not break the run.
+    });
 
     if (!last) {
       set({ index: index + 1, votes: nextVotes });

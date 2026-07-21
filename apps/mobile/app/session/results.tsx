@@ -3,7 +3,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { useRouter } from 'expo-router';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { serviceById, type Region } from '@watchly/shared';
+import { serviceById, type Region, type Voter } from '@watchly/shared';
 import { Button, Heading, Screen } from '../../src/components/ui';
 import { useSessionStore } from '../../src/stores/session';
 import { useAuthStore, useUser } from '../../src/stores/auth';
@@ -11,7 +11,7 @@ import { ErrorState, MatchCardSkeleton } from '../../src/components/states';
 import { track } from '../../src/lib/analytics';
 import { api } from '../../src/lib/api';
 import { openInService } from '../../src/lib/deeplinks';
-import type { PublicSession, PublicTitle, ResultsResponse } from '../../src/lib/types';
+import type { NearMiss, PublicSession, PublicTitle, ResultsResponse } from '../../src/lib/types';
 import { colors, radii, spacing, type } from '../../src/theme';
 
 export default function Results() {
@@ -21,6 +21,7 @@ export default function Results() {
   const voter = useSessionStore((s) => s.voter);
 
   const [matches, setMatches] = useState<PublicTitle[] | null>(null);
+  const [nearMisses, setNearMisses] = useState<NearMiss[]>([]);
   const [session, setSession] = useState<PublicSession | null>(storeSession);
   const [partnerUserId, setPartnerUserId] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -40,6 +41,7 @@ export default function Results() {
         if (cancelled) return;
         setSession(res.session);
         setMatches(res.matches);
+        setNearMisses(res.nearMisses);
         setPartnerUserId(res.partnerUserId);
         setFailed(false);
 
@@ -104,6 +106,51 @@ export default function Results() {
   }
 
   if (matches.length === 0) {
+    const myLabel = voter === 'PERSON_B' ? session.personBLabel : session.personALabel;
+    const partnerLabel = voter === 'PERSON_B' ? session.personALabel : session.personBLabel;
+
+    // A zero-match night doesn't have to be a dead end. If one of you liked
+    // something, offer it as a tiebreaker rather than sending them away empty.
+    if (nearMisses.length > 0) {
+      return (
+        <Screen>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
+            <Animated.View entering={FadeIn.duration(500)}>
+              <Text style={s.celebrate}>So close.</Text>
+              <Text style={s.emptyCopy}>
+                Nothing you both said yes to — but here&apos;s what one of you liked. Break the
+                tie?
+              </Text>
+            </Animated.View>
+
+            {nearMisses.map((n, i) => (
+              <Animated.View key={n.title.id} entering={FadeInDown.delay(120 * i).duration(420)}>
+                <NearMissCard
+                  nearMiss={n}
+                  region={session.region}
+                  voter={voter}
+                  myLabel={myLabel}
+                  partnerLabel={partnerLabel}
+                />
+              </Animated.View>
+            ))}
+          </ScrollView>
+
+          <View style={s.footer}>
+            {/* A fresh deck excludes everything just swiped, so this really is 15
+                new ones. Carry the mode across so separate-phone players aren't
+                dropped into a pass-the-phone session. */}
+            <Button
+              label="Swipe 15 more"
+              onPress={() => router.replace(`/session/new?mode=${session.mode}`)}
+              variant="ghost"
+            />
+            <Button label="Call it a night" onPress={done} variant="ghost" />
+          </View>
+        </Screen>
+      );
+    }
+
     return (
       <Screen>
         <View style={s.empty}>
@@ -116,10 +163,6 @@ export default function Results() {
           </Animated.View>
         </View>
         <View style={s.footer}>
-          {/* A fresh deck excludes everything just swiped, so this really is 15 new
-              ones. Carry the mode across: without it /session/new defaults to
-              same-device, and two people who just played on separate phones would
-              be silently dropped into a pass-the-phone session. */}
           <Button
             label="Swipe 15 more"
             onPress={() => router.replace(`/session/new?mode=${session.mode}`)}
@@ -217,20 +260,49 @@ function SavePartner({
   );
 }
 
-function MatchCard({ title, region }: { title: PublicTitle; region: Region }) {
-  // Only the services this title actually streams on, in this session's region.
-  const services = (title.watchProviders[region]?.flatrate ?? [])
-    .map(serviceById)
-    .filter((svc) => svc !== undefined);
-
-  const facts = [
+function titleFacts(title: PublicTitle): string {
+  return [
     title.releaseYear,
     title.runtime && (title.type === 'TV' ? `${title.runtime}m eps` : `${title.runtime}m`),
     title.genres.slice(0, 2).join(', '),
   ]
     .filter(Boolean)
     .join('  ·  ');
+}
 
+/** The "Play on X" buttons, shared by matches and near-misses — the punchline of
+ *  the whole app, so it lives in exactly one place. */
+function ServiceButtons({ title, region }: { title: PublicTitle; region: Region }) {
+  const services = (title.watchProviders[region]?.flatrate ?? [])
+    .map(serviceById)
+    .filter((svc) => svc !== undefined);
+
+  return (
+    <View style={s.services}>
+      {services.map((svc) => (
+        <Pressable
+          key={svc.id}
+          accessibilityRole="button"
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            // If matches happen but this stays flat, the product isn't landing —
+            // people are agreeing and then not watching.
+            track.serviceOpened({ service: svc.id, titleType: title.type });
+            openInService(svc.id, title.title);
+          }}
+          style={({ pressed }) => [s.serviceBtn, { borderColor: svc.color }, pressed && s.pressed]}
+        >
+          <View style={[s.dot, { backgroundColor: svc.color }]} />
+          <Text style={s.serviceLabel} numberOfLines={1}>
+            Play on {svc.label}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+function MatchCard({ title, region }: { title: PublicTitle; region: Region }) {
   return (
     <View style={s.match}>
       {/* Poster and text sit on one row; the play buttons get the full card width
@@ -247,36 +319,71 @@ function MatchCard({ title, region }: { title: PublicTitle; region: Region }) {
             {title.title}
           </Text>
           <Text style={s.matchFacts} numberOfLines={2}>
-            {facts}
+            {titleFacts(title)}
           </Text>
         </View>
       </View>
 
-      <View style={s.services}>
-        {services.map((svc) => (
-          <Pressable
-            key={svc.id}
-            accessibilityRole="button"
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              // The punchline. If matches happen but this stays flat, the product
-              // isn't landing — people are agreeing and then not watching.
-              track.serviceOpened({ service: svc.id, titleType: title.type });
-              openInService(svc.id, title.title);
-            }}
-            style={({ pressed }) => [
-              s.serviceBtn,
-              { borderColor: svc.color },
-              pressed && s.pressed,
-            ]}
-          >
-            <View style={[s.dot, { backgroundColor: svc.color }]} />
-            <Text style={s.serviceLabel} numberOfLines={1}>
-              Play on {svc.label}
-            </Text>
-          </Pressable>
-        ))}
+      <ServiceButtons title={title} region={region} />
+    </View>
+  );
+}
+
+/**
+ * A near-miss: something one person liked and the other didn't. The label makes
+ * clear whose pick it is, so the tiebreaker feels like an honest negotiation
+ * ("you liked this, they were on the fence") rather than a second set of matches.
+ */
+function NearMissCard({
+  nearMiss,
+  region,
+  voter,
+  myLabel,
+  partnerLabel,
+}: {
+  nearMiss: NearMiss;
+  region: Region;
+  voter: Voter | null;
+  myLabel: string;
+  partnerLabel: string;
+}) {
+  const { title, likedBy, otherDecision } = nearMiss;
+  const mineIsTheYes = voter !== null && likedBy === voter;
+
+  // "You liked it" reads better than "<your name> liked it"; the partner keeps
+  // their name. Same-device (voter null) has no "me", so name both sides.
+  const liker = mineIsTheYes ? 'You' : partnerLabel;
+  const otherName = mineIsTheYes ? partnerLabel : voter === null ? myLabel : 'you';
+  const reaction =
+    otherDecision === 'MAYBE'
+      ? `${otherName} were tempted`
+      : otherDecision === null
+        ? `${otherName} never got to it`
+        : `${otherName} passed`;
+
+  return (
+    <View style={s.match}>
+      <View style={s.matchTop}>
+        {title.posterUrl ? (
+          <Image source={{ uri: title.posterUrl }} style={s.poster} resizeMode="cover" />
+        ) : (
+          <View style={[s.poster, s.posterEmpty]} />
+        )}
+
+        <View style={s.matchBody}>
+          <Text style={s.nearTag}>
+            {liker} liked it · {reaction}
+          </Text>
+          <Text style={s.matchTitle} numberOfLines={3}>
+            {title.title}
+          </Text>
+          <Text style={s.matchFacts} numberOfLines={2}>
+            {titleFacts(title)}
+          </Text>
+        </View>
       </View>
+
+      <ServiceButtons title={title} region={region} />
     </View>
   );
 }
@@ -323,6 +430,14 @@ const s = StyleSheet.create({
   matchBody: { flex: 1, minWidth: 0, justifyContent: 'center' },
   matchTitle: { ...type.title, fontSize: 19, lineHeight: 25, color: colors.text },
   matchFacts: { ...type.caption, color: colors.textFaint, marginTop: spacing.xs },
+  nearTag: {
+    ...type.caption,
+    color: colors.gold,
+    marginBottom: spacing.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontSize: 11,
+  },
 
   services: { marginTop: spacing.md, gap: spacing.sm },
   serviceBtn: {

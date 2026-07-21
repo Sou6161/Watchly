@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -58,7 +58,10 @@ export function TrailerModal({ visible, videoIds, title, onClose }: Props) {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
-  const videoId = videoIds[pickIndex];
+  // Defensive: an older API response (before multi-trailer) could omit the array
+  // entirely, and indexing undefined would crash the whole deck.
+  const ids = videoIds ?? [];
+  const videoId = ids[pickIndex] ?? ids[0];
 
   // A new trailer deserves a clean slate — otherwise one blocked video would leave
   // the fallback showing for the next one.
@@ -76,7 +79,8 @@ export function TrailerModal({ visible, videoIds, title, onClose }: Props) {
   }, [pickIndex]);
 
   // Unlock rotation only while the trailer is on screen — the rest of the app
-  // (including the card behind it) stays portrait-only.
+  // (including the card behind it) stays portrait-only. Re-lock to portrait when
+  // the modal closes so the deck can never come back sideways.
   useEffect(() => {
     if (!visible) return;
     ScreenOrientation.unlockAsync();
@@ -84,6 +88,19 @@ export function TrailerModal({ visible, videoIds, title, onClose }: Props) {
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     };
   }, [visible]);
+
+  // YouTube's fullscreen button triggers Android's *native* WebView fullscreen,
+  // which fills the screen but never rotates the DEVICE — so a 16:9 trailer ends
+  // up letterboxed inside a portrait screen. This is the event that fires when
+  // that happens; force landscape on the way in, portrait on the way out, and the
+  // video fills the screen the way "fullscreen" is supposed to.
+  const onFullScreenChange = useCallback((isFullScreen: boolean) => {
+    ScreenOrientation.lockAsync(
+      isFullScreen
+        ? ScreenOrientation.OrientationLock.LANDSCAPE
+        : ScreenOrientation.OrientationLock.PORTRAIT_UP,
+    );
+  }, []);
 
   const openInYouTube = () => {
     // The app if it's installed, the website if not.
@@ -145,6 +162,7 @@ export function TrailerModal({ visible, videoIds, title, onClose }: Props) {
                   // through at all. Harmless when the user taps play themselves.
                   forceAndroidAutoplay
                   onReady={() => setReady(true)}
+                  onFullScreenChange={onFullScreenChange}
                   onError={(e: string) => {
                     if (e === 'embed_not_allowed') setBlocked(true);
                     else setBlocked(true);
@@ -159,9 +177,9 @@ export function TrailerModal({ visible, videoIds, title, onClose }: Props) {
             )}
           </View>
 
-          {!isLandscape && videoIds.length > 1 && (
+          {!isLandscape && ids.length > 1 && (
             <View style={s.picker}>
-              {videoIds.map((id, i) => (
+              {ids.map((id, i) => (
                 <Pressable
                   key={id}
                   onPress={() => setPickIndex(i)}

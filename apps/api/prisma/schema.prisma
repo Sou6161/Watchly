@@ -85,6 +85,14 @@ model Session {
   region   String
   services String[] @default([])
 
+  // Async session: person A swipes their whole deck now and leaves; person B joins
+  // by code hours or days later. Same two-account, two-side model as a live
+  // multi-device night — only the timing differs — so votes and completion are
+  // unchanged. What it DOES change: person A starts IN_PROGRESS without waiting,
+  // and the 30-minute abandonment sweep leaves it alone (a much longer TTL applies
+  // instead), because sitting idle is the entire point.
+  isAsync Boolean @default(false)
+
   // Filters chosen at session start.
   //
   // titleType is asked FIRST and is never null: a session is for a movie or for a
@@ -104,6 +112,16 @@ model Session {
   // Drives the 30-minute abandonment sweep (Feature 4).
   lastActivityAt DateTime @default(now())
   completedAt    DateTime?
+
+  // Watch-loop: the morning-after question. Null until the couple tells us how
+  // the night went; once set we never ask again. watchedTitleId is the match they
+  // actually played (a stronger taste signal than a swipe), or null for "we
+  // didn't get to it / watched something else". Kept as a plain id, not a
+  // relation — it's always one of this session's own matches, already joinable
+  // through Vote.
+  watchLoggedAt  DateTime?
+  watchedTitleId String?
+
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

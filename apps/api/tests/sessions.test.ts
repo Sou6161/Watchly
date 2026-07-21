@@ -107,6 +107,83 @@ describe('sessions', () => {
     expect(res.body.matches).toHaveLength(0);
   });
 
+  it('surfaces one-sided YESes as near-misses, closest first', async () => {
+    const a = await signUp('a@example.com', 'A');
+    await seedTitles(20);
+    const { session, titles } = await createSession(a.accessToken);
+    const [t0, t1, t2, t3] = titles;
+
+    // t0: a real match — must NOT appear as a near-miss.
+    await vote(a.accessToken, session.id, t0!.id, 'PERSON_A', 'YES').expect(201);
+    await vote(a.accessToken, session.id, t0!.id, 'PERSON_B', 'YES').expect(201);
+    // t1: A liked, B said NO (a far near-miss).
+    await vote(a.accessToken, session.id, t1!.id, 'PERSON_A', 'YES').expect(201);
+    await vote(a.accessToken, session.id, t1!.id, 'PERSON_B', 'NO').expect(201);
+    // t2: A liked, B was tempted (the closest kind).
+    await vote(a.accessToken, session.id, t2!.id, 'PERSON_A', 'YES').expect(201);
+    await vote(a.accessToken, session.id, t2!.id, 'PERSON_B', 'MAYBE').expect(201);
+    // t3: A liked, B already SEEN it — dropped, you can't watch it "together".
+    await vote(a.accessToken, session.id, t3!.id, 'PERSON_A', 'YES').expect(201);
+    await vote(a.accessToken, session.id, t3!.id, 'PERSON_B', 'SEEN').expect(201);
+
+    const res = await request(app)
+      .get(`/api/sessions/${session.id}/results`)
+      .set(auth(a.accessToken))
+      .expect(200);
+
+    const nm = res.body.nearMisses as { title: { id: string }; otherDecision: string | null }[];
+    expect(nm.map((n) => n.title.id)).toEqual([t2!.id, t1!.id]); // MAYBE before NO, SEEN excluded
+    expect(res.body.matches.map((m: { id: string }) => m.id)).toEqual([t0!.id]);
+  });
+
+  it('offers a watch-check for a matched night, then never again', async () => {
+    const a = await signUp('a@example.com', 'A');
+    await seedTitles(20);
+    const { session, titles } = await createSession(a.accessToken);
+    const match = titles[0]!;
+
+    await vote(a.accessToken, session.id, match.id, 'PERSON_A', 'YES').expect(201);
+    await vote(a.accessToken, session.id, match.id, 'PERSON_B', 'YES').expect(201);
+    // Finish the deck so the session completes.
+    for (let i = 1; i < titles.length; i++) {
+      await vote(a.accessToken, session.id, titles[i]!.id, 'PERSON_A', 'NO').expect(201);
+      await vote(a.accessToken, session.id, titles[i]!.id, 'PERSON_B', 'NO').expect(201);
+    }
+
+    const check = await request(app)
+      .get('/api/sessions/watch-check')
+      .set(auth(a.accessToken))
+      .expect(200);
+    expect(check.body.check.session.id).toBe(session.id);
+    expect(check.body.check.matches.map((m: { id: string }) => m.id)).toEqual([match.id]);
+
+    // Answer it — then the prompt is gone.
+    await request(app)
+      .post(`/api/sessions/${session.id}/watched`)
+      .set(auth(a.accessToken))
+      .send({ watchedTitleId: match.id })
+      .expect(200);
+
+    const after = await request(app)
+      .get('/api/sessions/watch-check')
+      .set(auth(a.accessToken))
+      .expect(200);
+    expect(after.body.check).toBeNull();
+  });
+
+  it('rejects a watched title that was not a match', async () => {
+    const a = await signUp('a@example.com', 'A');
+    await seedTitles(20);
+    const { session, titles } = await createSession(a.accessToken);
+
+    // titles[0] got no YESes, so it can't have been "watched together".
+    await request(app)
+      .post(`/api/sessions/${session.id}/watched`)
+      .set(auth(a.accessToken))
+      .send({ watchedTitleId: titles[0]!.id })
+      .expect(400);
+  });
+
   it('is idempotent per (session, title, voter)', async () => {
     const a = await signUp('a@example.com', 'A');
     await seedTitles(20);
@@ -167,6 +244,107 @@ describe('sessions', () => {
 
     // And a closed session takes no more votes.
     await vote(a.accessToken, session.id, titles[0]!.id, 'PERSON_A', 'YES').expect(409);
+  });
+});
+
+describe('taste profile', () => {
+  it('is empty before any nights', async () => {
+    const a = await signUp('a@example.com', 'A');
+    const res = await request(app).get('/api/me/taste').set(auth(a.accessToken)).expect(200);
+    expect(res.body).toMatchObject({ nights: 0, swiped: 0, yes: 0, agreement: null, loves: [] });
+  });
+
+  it('reflects yeses, agreement, and loved genres after a night', async () => {
+    const a = await signUp('a@example.com', 'A');
+    await seedTitles(20); // all genre ['Comedy']
+    const { session, titles } = await createSession(a.accessToken);
+
+    // A says yes to the first two, B agrees only on the first.
+    await vote(a.accessToken, session.id, titles[0]!.id, 'PERSON_A', 'YES').expect(201);
+    await vote(a.accessToken, session.id, titles[1]!.id, 'PERSON_A', 'YES').expect(201);
+    await vote(a.accessToken, session.id, titles[0]!.id, 'PERSON_B', 'YES').expect(201);
+    await vote(a.accessToken, session.id, titles[1]!.id, 'PERSON_B', 'NO').expect(201);
+    // Finish the deck so the session is COMPLETED (taste only counts closed nights).
+    for (let i = 2; i < titles.length; i++) {
+      await vote(a.accessToken, session.id, titles[i]!.id, 'PERSON_A', 'NO').expect(201);
+      await vote(a.accessToken, session.id, titles[i]!.id, 'PERSON_B', 'NO').expect(201);
+    }
+
+    const res = await request(app).get('/api/me/taste').set(auth(a.accessToken)).expect(200);
+    expect(res.body.nights).toBe(1);
+    expect(res.body.yes).toBe(2); // A's two yeses
+    // Either-yes titles: {t0, t1}; both-yes: {t0} → 1/2.
+    expect(res.body.agreement).toBeCloseTo(0.5);
+    expect(res.body.loves[0]).toEqual({ genre: 'Comedy', count: 2 });
+  });
+});
+
+describe('async sessions', () => {
+  it('starts IN_PROGRESS without waiting for person B', async () => {
+    const a = await signUp('a@example.com', 'A');
+    await seedTitles(20);
+
+    const res = await request(app)
+      .post('/api/sessions')
+      .set(auth(a.accessToken))
+      .send({ mode: 'MULTI_DEVICE', titleType: 'MOVIE', async: true })
+      .expect(201);
+
+    // A live multi-device session would be WAITING here; async lets A swipe now.
+    expect(res.body.session.status).toBe('IN_PROGRESS');
+    expect(res.body.session.isAsync).toBe(true);
+  });
+
+  it('surfaces as active (waiting on B) once A finishes, then completes when B does', async () => {
+    const a = await signUp('a@example.com', 'A');
+    const b = await signUp('b@example.com', 'B');
+    await seedTitles(20);
+
+    const created = await request(app)
+      .post('/api/sessions')
+      .set(auth(a.accessToken))
+      .send({ mode: 'MULTI_DEVICE', titleType: 'MOVIE', async: true })
+      .expect(201);
+    const session = created.body.session as { id: string; code: string };
+    const titles = created.body.titles as { id: string }[];
+
+    // A swipes the whole deck now.
+    for (const t of titles) {
+      await vote(a.accessToken, session.id, t.id, 'PERSON_A', 'YES').expect(201);
+    }
+
+    // A now sees it in "still going", waiting on B.
+    const active = await request(app)
+      .get('/api/sessions/active')
+      .set(auth(a.accessToken))
+      .expect(200);
+    expect(active.body.active).toHaveLength(1);
+    expect(active.body.active[0]).toMatchObject({ waitingOnPartner: true, yourTurn: false });
+
+    // B joins later and finishes.
+    await request(app)
+      .post(`/api/sessions/${session.code}/join`)
+      .set(auth(b.accessToken))
+      .expect(200);
+    let last;
+    for (const t of titles) {
+      last = await vote(b.accessToken, session.id, t.id, 'PERSON_B', 'YES').expect(201);
+    }
+
+    // B's final swipe completes the session server-side — no live socket needed.
+    expect(last!.body.progress.bothDone).toBe(true);
+    const detail = await request(app)
+      .get(`/api/sessions/${session.id}`)
+      .set(auth(a.accessToken))
+      .expect(200);
+    expect(detail.body.session.status).toBe('COMPLETED');
+
+    // And it's no longer "active" for either of them.
+    const afterA = await request(app)
+      .get('/api/sessions/active')
+      .set(auth(a.accessToken))
+      .expect(200);
+    expect(afterA.body.active).toHaveLength(0);
   });
 });
 

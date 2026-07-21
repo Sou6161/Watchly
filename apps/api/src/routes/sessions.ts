@@ -3,12 +3,16 @@ import { z } from 'zod';
 import type { Session } from '@prisma/client';
 import {
   MOOD_IDS,
+  NEAR_MISS_LIMIT,
   REGIONS,
   SERVICE_IDS,
   SESSION_QUEUE_SIZE,
+  WATCH_CHECK_WINDOW_DAYS,
   moodById,
+  type Decision,
   type Region,
   type SessionSummary,
+  type Voter,
 } from '@watchly/shared';
 import { prisma } from '../lib/prisma.js';
 import { ApiError, wrap } from '../lib/errors.js';
@@ -34,6 +38,9 @@ const createSchema = z.object({
   // Same-device only: the two names typed at session start.
   personALabel: z.string().trim().min(1).max(24).optional(),
   personBLabel: z.string().trim().min(1).max(24).optional(),
+  // Async: person A swipes now and person B finishes whenever. Only meaningful
+  // for multi-device — a same-device night already has both people present.
+  async: z.boolean().optional(),
 });
 
 /**
@@ -51,6 +58,9 @@ sessionsRouter.post(
 
     const region: Region = body.region ?? (me.region as Region);
     const services = body.services ?? me.services;
+    // Async only applies to two-phone sessions; a same-device night is inherently
+    // synchronous. Silently ignore the flag rather than erroring on a harmless combo.
+    const isAsync = body.mode === 'MULTI_DEVICE' && body.async === true;
 
     if (services.length === 0) {
       throw ApiError.badRequest('Pick at least one streaming service first.');
@@ -83,9 +93,11 @@ sessionsRouter.post(
       data: {
         code: await generateSessionCode(prisma),
         mode: body.mode,
-        // Same-device has both players present from the start; multi-device has
-        // to wait for person B to punch in the code.
-        status: body.mode === 'SAME_DEVICE' ? 'IN_PROGRESS' : 'WAITING',
+        isAsync,
+        // Same-device and async both start swiping immediately (async person A
+        // doesn't wait for anyone); only a LIVE multi-device night waits in the
+        // lobby for person B to punch in the code.
+        status: body.mode === 'SAME_DEVICE' || isAsync ? 'IN_PROGRESS' : 'WAITING',
         personAId: me.id,
         personALabel: body.personALabel ?? me.displayName,
         personBLabel: body.personBLabel ?? 'Person B',
@@ -191,6 +203,143 @@ sessionsRouter.get(
     });
 
     res.json({ sessions: summaries });
+  }),
+);
+
+/**
+ * GET /api/sessions/watch-check — the morning-after prompt, or null.
+ *
+ * Returns the most recent completed, matched session the caller hasn't told us
+ * about yet — the one worth asking "did you actually watch it?". Nulls out fast
+ * in the common case (nothing pending), so the home screen pays almost nothing.
+ *
+ * Registered ABOVE GET /:id on purpose: Express matches in order, and /:id would
+ * otherwise swallow "watch-check" as a session id.
+ */
+sessionsRouter.get(
+  '/watch-check',
+  wrap(async (req, res) => {
+    const me = (req as AuthedRequest).user;
+    const since = new Date(Date.now() - WATCH_CHECK_WINDOW_DAYS * 86_400_000);
+
+    // Newest-first, but a zero-match night has nothing to have watched — so walk a
+    // few back until we find one with actual matches rather than nagging or giving
+    // up at the first empty session.
+    const candidates = await prisma.session.findMany({
+      where: {
+        OR: [{ personAId: me.id }, { personBId: me.id }],
+        status: 'COMPLETED',
+        watchLoggedAt: null,
+        completedAt: { gte: since },
+      },
+      orderBy: { completedAt: 'desc' },
+      take: 5,
+    });
+
+    for (const candidate of candidates) {
+      const ids = await matchedTitleIds(candidate.id);
+      if (ids.length === 0) continue;
+
+      const titles = await prisma.title.findMany({ where: { id: { in: ids } } });
+      const byId = new Map(titles.map((t) => [t.id, t]));
+      const ordered = candidate.titleQueue.filter((id) => byId.has(id)).map((id) => byId.get(id)!);
+
+      const iAmA = candidate.personAId === me.id;
+      res.json({
+        check: {
+          session: toPublicSession(candidate),
+          matches: ordered.map(toPublicTitle),
+          partnerLabel: iAmA ? candidate.personBLabel : candidate.personALabel,
+        },
+      });
+      return;
+    }
+
+    res.json({ check: null });
+  }),
+);
+
+/**
+ * GET /api/sessions/active — the caller's open async sessions.
+ *
+ * These are the "still going" nights: person A has swiped (or is swiping) and is
+ * waiting on person B, or vice-versa. Powers the home screen's "in progress"
+ * strip. Live sessions never appear here — they're transient and driven by the
+ * socket, not something you come back to later.
+ *
+ * Above GET /:id for the same routing reason as watch-check.
+ */
+sessionsRouter.get(
+  '/active',
+  wrap(async (req, res) => {
+    const me = (req as AuthedRequest).user;
+
+    const sessions = await prisma.session.findMany({
+      where: {
+        OR: [{ personAId: me.id }, { personBId: me.id }],
+        isAsync: true,
+        status: 'IN_PROGRESS',
+      },
+      orderBy: { lastActivityAt: 'desc' },
+      take: 10,
+    });
+
+    const active = await Promise.all(
+      sessions.map(async (s) => {
+        const progress = await getProgress(s);
+        const iAmA = s.personAId === me.id;
+        const mineDone = iAmA ? progress.personADone : progress.personBDone;
+        const theirsDone = iAmA ? progress.personBDone : progress.personADone;
+
+        return {
+          session: toPublicSession(s),
+          partnerLabel: iAmA ? s.personBLabel : s.personALabel,
+          progress,
+          // Whose move is it? If the caller hasn't finished, it's theirs; if they
+          // have but the partner hasn't, they're waiting.
+          yourTurn: !mineDone,
+          waitingOnPartner: mineDone && !theirsDone,
+        };
+      }),
+    );
+
+    res.json({ active });
+  }),
+);
+
+/**
+ * POST /api/sessions/:id/watched — the couple's answer to the watch-loop prompt.
+ *
+ * watchedTitleId is one of this session's matches (they watched it) or null (they
+ * didn't get to it). Either way watchLoggedAt is set, so we never ask twice.
+ */
+const watchedSchema = z.object({
+  watchedTitleId: z.string().min(1).nullable(),
+});
+
+sessionsRouter.post(
+  '/:id/watched',
+  wrap(async (req, res) => {
+    const me = (req as AuthedRequest).user;
+    const session = await loadSessionForUser(req.params.id!, me.id);
+    const { watchedTitleId } = parseBody(watchedSchema, req.body);
+
+    // A watched title must be a real match of this session — otherwise the taste
+    // profile can't trust "watched" as ground truth over a mere swipe.
+    if (watchedTitleId !== null) {
+      const ids = await matchedTitleIds(session.id);
+      if (!ids.includes(watchedTitleId)) {
+        throw ApiError.badRequest('That title was not one of this session’s matches.');
+      }
+    }
+
+    const updated = await prisma.session.update({
+      where: { id: session.id },
+      // Idempotent by nature: re-answering just overwrites the previous answer.
+      data: { watchLoggedAt: new Date(), watchedTitleId },
+    });
+
+    res.json({ session: toPublicSession(updated) });
   }),
 );
 
@@ -376,27 +525,55 @@ sessionsRouter.get(
     const me = (req as AuthedRequest).user;
     const session = await loadSessionForUser(req.params.id!, me.id);
 
-    const votes = await prisma.vote.findMany({
-      where: { sessionId: session.id, decision: 'YES' },
-    });
+    // Every vote, not just the YESes: near-misses need to know what the OTHER
+    // person said, which means we have to see the NOs and MAYBEs too.
+    const votes = await prisma.vote.findMany({ where: { sessionId: session.id } });
 
-    const yesBy = new Map<string, Set<string>>();
+    // titleId -> { PERSON_A?: Decision, PERSON_B?: Decision }
+    const byTitle = new Map<string, Partial<Record<Voter, Decision>>>();
     for (const v of votes) {
-      const set = yesBy.get(v.titleId) ?? new Set<string>();
-      set.add(v.voter);
-      yesBy.set(v.titleId, set);
+      const entry = byTitle.get(v.titleId) ?? {};
+      entry[v.voter] = v.decision;
+      byTitle.set(v.titleId, entry);
     }
 
-    const matchedIds = [...yesBy.entries()]
-      .filter(([, voters]) => voters.has('PERSON_A') && voters.has('PERSON_B'))
-      .map(([titleId]) => titleId);
+    const matchedIds: string[] = [];
+    // A near-miss is a title exactly one person said YES to. It turns the dead
+    // end of a zero-match night into a shortlist worth arguing over — and even on
+    // a matched night, "you were close on these" is a nice second act.
+    const nearMissRaw: { titleId: string; likedBy: Voter; otherDecision: Decision | null }[] = [];
 
-    const titles = await prisma.title.findMany({ where: { id: { in: matchedIds } } });
+    for (const [titleId, decs] of byTitle) {
+      const a = decs.PERSON_A;
+      const b = decs.PERSON_B;
+      if (a === 'YES' && b === 'YES') {
+        matchedIds.push(titleId);
+      } else if (a === 'YES' && b !== 'YES') {
+        nearMissRaw.push({ titleId, likedBy: 'PERSON_A', otherDecision: b ?? null });
+      } else if (b === 'YES' && a !== 'YES') {
+        nearMissRaw.push({ titleId, likedBy: 'PERSON_B', otherDecision: a ?? null });
+      }
+    }
+
+    // Closest first: a MAYBE from the other side means they were tempted; an
+    // unvoted title (async, or they quit early) is a genuine unknown; a NO is the
+    // furthest thing from agreement. SEEN we drop — you can't watch it "together"
+    // if one of you already has.
+    const closeness = (d: Decision | null) =>
+      d === 'MAYBE' ? 0 : d === null ? 1 : d === 'NO' ? 2 : 3;
+    const nearMisses = nearMissRaw
+      .filter((n) => n.otherDecision !== 'SEEN')
+      .sort((x, y) => closeness(x.otherDecision) - closeness(y.otherDecision))
+      .slice(0, NEAR_MISS_LIMIT);
+
+    // One query for every title we might return — matches and near-misses both.
+    const wantIds = [...matchedIds, ...nearMisses.map((n) => n.titleId)];
+    const titles = await prisma.title.findMany({ where: { id: { in: wantIds } } });
     const byId = new Map(titles.map((t) => [t.id, t]));
 
     // Keep queue order so the matches read in the order they were swiped.
     const ordered = session.titleQueue
-      .filter((id) => byId.has(id))
+      .filter((id) => matchedIds.includes(id) && byId.has(id))
       .map((id) => byId.get(id)!);
 
     /**
@@ -416,6 +593,11 @@ sessionsRouter.get(
     res.json({
       session: toPublicSession(session),
       matches: ordered.map(toPublicTitle),
+      nearMisses: nearMisses.map((n) => ({
+        title: toPublicTitle(byId.get(n.titleId)!),
+        likedBy: n.likedBy,
+        otherDecision: n.otherDecision,
+      })),
       progress: await getProgress(session),
       partnerUserId,
     });
@@ -435,6 +617,26 @@ async function orderedTitles(session: Session) {
   const titles = await prisma.title.findMany({ where: { id: { in: session.titleQueue } } });
   const byId = new Map(titles.map((t) => [t.id, t]));
   return session.titleQueue.map((id) => byId.get(id)).filter((t) => t !== undefined);
+}
+
+/**
+ * The titles both people said YES to in one session — its matches. Shared by the
+ * watch-loop prompt and the /watched guard so "a match" means one thing everywhere.
+ */
+async function matchedTitleIds(sessionId: string): Promise<string[]> {
+  const yes = await prisma.vote.findMany({
+    where: { sessionId, decision: 'YES' },
+    select: { titleId: true, voter: true },
+  });
+  const voters = new Map<string, Set<string>>();
+  for (const v of yes) {
+    const set = voters.get(v.titleId) ?? new Set<string>();
+    set.add(v.voter);
+    voters.set(v.titleId, set);
+  }
+  return [...voters.entries()]
+    .filter(([, vs]) => vs.has('PERSON_A') && vs.has('PERSON_B'))
+    .map(([id]) => id);
 }
 
 /** 404s rather than 403s for other people's sessions — don't confirm they exist. */
@@ -478,6 +680,7 @@ export function toPublicSession(s: Session) {
     id: s.id,
     code: s.code,
     mode: s.mode,
+    isAsync: s.isAsync,
     status: s.status,
     personALabel: s.personALabel,
     personBLabel: s.personBLabel,
@@ -489,5 +692,7 @@ export function toPublicSession(s: Session) {
     queueLength: s.titleQueue.length,
     createdAt: s.createdAt.toISOString(),
     completedAt: s.completedAt?.toISOString() ?? null,
+    watchLoggedAt: s.watchLoggedAt?.toISOString() ?? null,
+    watchedTitleId: s.watchedTitleId,
   };
 }

@@ -28,6 +28,9 @@ export default function NewSession() {
   const [duration, setDuration] = useState<string>('any');
   const [personA, setPersonA] = useState(user?.displayName ?? 'Person A');
   const [personB, setPersonB] = useState('Person B');
+  // Multi-device only: are both people here now, or does one swipe first and the
+  // other finish later?
+  const [asyncMode, setAsyncMode] = useState(false);
 
   const start = async () => {
     const maxRuntime = DURATION_FILTERS.find((d) => d.id === duration)?.maxRuntime ?? null;
@@ -39,6 +42,7 @@ export default function NewSession() {
       // The server ignores this for series anyway; not sending it keeps the
       // request honest about what was actually asked for.
       maxRuntime: kind === 'MOVIE' ? maxRuntime : null,
+      async: !sameDevice && asyncMode,
       ...(sameDevice && {
         personALabel: personA.trim() || 'Person A',
         personBLabel: personB.trim() || 'Person B',
@@ -54,7 +58,10 @@ export default function NewSession() {
       maxRuntime: kind === 'MOVIE' ? maxRuntime : null,
     });
 
-    if (sameDevice) {
+    // Same-device and async both send person A straight to the deck — neither
+    // waits in the live lobby. (Async has no live partner; the code is shared
+    // after A finishes, from the share screen.)
+    if (sameDevice || asyncMode) {
       router.replace('/session/swipe');
       return;
     }
@@ -78,6 +85,48 @@ export default function NewSession() {
         </Subheading>
 
         {!!error && <View style={s.errorWrap}><FormError message={error} /></View>}
+
+        {!sameDevice && (
+          <>
+            <Text style={s.sectionLabel}>When are you both swiping?</Text>
+            <View style={s.kindRow}>
+              <Pressable
+                accessibilityRole="radio"
+                accessibilityState={{ selected: !asyncMode }}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setAsyncMode(false);
+                }}
+                style={({ pressed }) => [
+                  s.kindCard,
+                  !asyncMode && s.kindCardActive,
+                  pressed && s.kindPressed,
+                ]}
+              >
+                <Text style={s.kindEmoji}>👀</Text>
+                <Text style={[s.kindLabel, !asyncMode && s.kindLabelActive]}>Both now</Text>
+                <Text style={s.kindBlurb}>They join with a code and you swipe together.</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="radio"
+                accessibilityState={{ selected: asyncMode }}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setAsyncMode(true);
+                }}
+                style={({ pressed }) => [
+                  s.kindCard,
+                  asyncMode && s.kindCardActive,
+                  pressed && s.kindPressed,
+                ]}
+              >
+                <Text style={s.kindEmoji}>⏳</Text>
+                <Text style={[s.kindLabel, asyncMode && s.kindLabelActive]}>I&apos;ll go first</Text>
+                <Text style={s.kindBlurb}>Swipe now, send them the code to finish later.</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
 
         {sameDevice && (
           <>

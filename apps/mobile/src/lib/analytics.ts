@@ -113,4 +113,12 @@ export const track = {
   trailerPlayed() {
     capture('trailer_played');
   },
+
+  /**
+   * The watch-loop close. `watched: true` is the strongest evidence the whole
+   * product works — two people agreed AND then actually watched it together.
+   */
+  watchLogged(p: { watched: boolean }) {
+    capture('watch_logged', { watched: p.watched });
+  },
 };
