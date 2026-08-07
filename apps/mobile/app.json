@@ -2,6 +2,7 @@
   "expo": {
     "name": "Watchly",
     "slug": "watchly",
+    "owner": "sourabh6161",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -88,7 +89,11 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -100,12 +105,18 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Watchly uses the camera to scan your partner\u2019s session QR code."
+          "cameraPermission": "Watchly uses the camera to scan your partner’s session QR code."
         }
       ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "666b23ac-887e-45c8-94ce-f62d2b1d69d8"
+      }
     }
   }
 }
