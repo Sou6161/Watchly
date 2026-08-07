@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { app, auth, seedTitles, signUp } from './helpers.js';
 import { prisma } from '../src/lib/prisma.js';
+import { buildQueue, type QueueFilters } from '../src/lib/queue.js';
 
 describe('title queue', () => {
   it('only returns titles streaming on a service the user has, in their region', async () => {
@@ -168,6 +169,49 @@ describe('title queue', () => {
     expect(res.body.title.id).toBeTruthy();
     // Never leaks the plot synopsis onto a pick, same as every other card.
     expect(res.body.title.overview).toBeUndefined();
+  });
+
+  it('adaptive taste biases the shuffle toward loved genres, without excluding others', async () => {
+    // Equal popularity on both piles, so any difference is the taste weight alone.
+    await seedTitles(10, { genres: ['Comedy'], popularity: 50 });
+    await seedTitles(10, { genres: ['Horror'], popularity: 50 });
+
+    const base: Omit<QueueFilters, 'tasteGenres'> = {
+      region: 'IN',
+      services: ['netflix'],
+      titleType: 'MOVIE',
+      genres: [],
+      maxRuntime: null,
+      minYear: null,
+      minRating: null,
+      language: null,
+      limit: 10,
+    };
+
+    const countComedy = async (tasteGenres: string[]) => {
+      const q = await buildQueue(prisma, { ...base, tasteGenres }, []);
+      return q.filter((t) => t.genres.includes('Comedy')).length;
+    };
+
+    // Compare biased vs unbiased over several draws — a relative check is far less
+    // flaky than pinning an absolute fraction of a randomised shuffle.
+    const TRIALS = 25;
+    let biased = 0;
+    let plain = 0;
+    for (let i = 0; i < TRIALS; i++) {
+      biased += await countComedy(['Comedy']);
+      plain += await countComedy([]);
+    }
+
+    const biasedAvg = biased / TRIALS;
+    const plainAvg = plain / TRIALS;
+
+    // Unbiased sits around 5 of 10; the taste weight pulls comedy clearly higher —
+    // but horror still shows up, so it's a bias, not a filter.
+    expect(plainAvg).toBeGreaterThan(3);
+    expect(plainAvg).toBeLessThan(7);
+    expect(biasedAvg).toBeGreaterThan(plainAvg + 1);
+    expect(biasedAvg).toBeLessThan(10); // never the WHOLE deck — variety survives
   });
 
   it('rejects an unknown service', async () => {

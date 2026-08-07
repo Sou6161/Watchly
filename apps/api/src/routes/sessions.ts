@@ -28,6 +28,7 @@ import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js';
 import { parseBody } from '../lib/validate.js';
 import { generateSessionCode } from '../lib/code.js';
 import { ensureQueue } from '../lib/catalog.js';
+import { lovedGenres } from '../lib/taste.js';
 import { toPublicTitle } from './titles.js';
 import { emitSessionCompleted, emitSessionJoined, emitVoteSubmitted } from '../realtime.js';
 
@@ -92,6 +93,11 @@ sessionsRouter.post(
 
     const deckSize = body.deckSize ?? SESSION_QUEUE_SIZE;
 
+    // Adaptive taste: when the user hasn't asked for a specific mood, gently bias
+    // the deck toward the genres they keep saying yes to. A chosen mood is an
+    // explicit override, so we don't second-guess it with history.
+    const tasteGenres = body.mood ? [] : await lovedGenres(me.id, body.titleType);
+
     // Fetches from TMDB and caches on the fly if the local catalogue can't
     // already satisfy these filters.
     const titles = await ensureQueue(
@@ -106,6 +112,7 @@ sessionsRouter.post(
         minYear: body.era ? minYearForEra(body.era) : null,
         minRating: body.rating ? minRatingForId(body.rating) : null,
         language: body.language ? languageCodeForId(body.language) : null,
+        tasteGenres,
         limit: deckSize,
       },
       [me.id],

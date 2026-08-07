@@ -17,8 +17,21 @@ export interface QueueFilters {
   minRating: number | null;
   /** Original-language ISO code (from the language rule). null = any language. */
   language: string | null;
+  /**
+   * Genres to gently favour in the shuffle (the player's learned taste). Unlike
+   * `genres`, this is NOT a filter — titles outside it still appear, just less
+   * often — so a taste-biased deck stays varied. Empty = no bias.
+   */
+  tasteGenres: string[];
   limit: number;
 }
+
+/**
+ * How much a taste-matching title's weight is multiplied in the shuffle. 2.5 is
+ * deliberately gentle: enough that "you keep getting thrillers because you love
+ * them" is felt, not so much that the deck turns into fifteen of the same thing.
+ */
+const TASTE_WEIGHT = 2.5;
 
 /**
  * Builds the shuffled candidate pool for a session.
@@ -36,8 +49,18 @@ export async function buildQueue(
   filters: QueueFilters,
   excludeForUserIds: string[],
 ): Promise<Title[]> {
-  const { region, services, titleType, genres, maxRuntime, minYear, minRating, language, limit } =
-    filters;
+  const {
+    region,
+    services,
+    titleType,
+    genres,
+    maxRuntime,
+    minYear,
+    minRating,
+    language,
+    tasteGenres,
+    limit,
+  } = filters;
 
   const conditions: Prisma.Sql[] = [
     // Movie night or series night — never a deck with both mixed in.
@@ -96,18 +119,29 @@ export async function buildQueue(
   const where = Prisma.join(conditions, ' AND ');
 
   /**
-   * Popularity-weighted shuffle (Efraimidis–Spirakis): ordering by
-   * -ln(random()) / weight draws a sample without replacement where each row's
-   * chance is proportional to its weight. A plain ORDER BY random() over ~8k
-   * titles would mostly surface obscure ones; ordering by popularity alone would
-   * show the same fifteen cards every night. This gives a fresh deck that still
-   * leans recognisable.
+   * Each row's sampling weight. Base is popularity; if the player has a learned
+   * taste, titles sharing one of their favourite genres get their weight
+   * multiplied, so they surface more often WITHOUT being the only thing shown.
+   * With no taste history this is just popularity — identical to before.
+   */
+  const weight =
+    tasteGenres.length > 0
+      ? Prisma.sql`GREATEST(t.popularity, 0.01) * (CASE WHEN t.genres && ${tasteGenres}::text[] THEN ${TASTE_WEIGHT} ELSE 1 END)`
+      : Prisma.sql`GREATEST(t.popularity, 0.01)`;
+
+  /**
+   * Weighted shuffle (Efraimidis–Spirakis): ordering by -ln(random()) / weight
+   * draws a sample without replacement where each row's chance is proportional to
+   * its weight. A plain ORDER BY random() over thousands of titles would mostly
+   * surface obscure ones; ordering by weight alone would show the same fifteen
+   * cards every night. This gives a fresh deck that leans recognisable — and, with
+   * taste weighting, leans toward what this person actually likes.
    */
   return prisma.$queryRaw<Title[]>`
     SELECT t.*
     FROM "Title" t
     WHERE ${where}
-    ORDER BY -LN(RANDOM()) / GREATEST(t.popularity, 0.01)
+    ORDER BY -LN(RANDOM()) / (${weight})
     LIMIT ${limit}
   `;
 }

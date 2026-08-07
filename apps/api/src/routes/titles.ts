@@ -20,6 +20,7 @@ import { ApiError, wrap } from '../lib/errors.js';
 import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js';
 import type { QueueFilters } from '../lib/queue.js';
 import { ensureQueue } from '../lib/catalog.js';
+import { lovedGenres } from '../lib/taste.js';
 
 export const titlesRouter = Router();
 
@@ -82,6 +83,9 @@ titlesRouter.get(
       minYear: q.era ? minYearForEra(q.era) : null,
       minRating: q.rating ? minRatingForId(q.rating) : null,
       language: q.language ? languageCodeForId(q.language) : null,
+      // Same adaptive bias as a real session: lean toward learned taste unless a
+      // mood was explicitly chosen.
+      tasteGenres: q.mood ? [] : await lovedGenres(me.id, q.titleType),
       limit: q.limit,
     };
 
@@ -136,6 +140,9 @@ titlesRouter.get(
       minYear: null,
       minRating: null,
       language: null,
+      // Surprise already applies taste as a HARD genre filter below, so no soft
+      // shuffle bias on top.
+      tasteGenres: [] as string[],
       limit: 12,
     } as const;
 
@@ -198,36 +205,6 @@ titlesRouter.get(
     res.json({ titles });
   }),
 );
-
-/** The genres a user says YES to most, for one media type. Empty if no history. */
-async function lovedGenres(userId: string, titleType: 'MOVIE' | 'TV'): Promise<string[]> {
-  const votes = await prisma.vote.findMany({
-    where: {
-      decision: 'YES',
-      title: { type: titleType },
-      session: { OR: [{ personAId: userId }, { personBId: userId }] },
-    },
-    select: {
-      voter: true,
-      title: { select: { genres: true } },
-      session: { select: { personAId: true } },
-    },
-  });
-
-  const counts = new Map<string, number>();
-  for (const v of votes) {
-    // Only the account holder's own side counts as their taste (in same-device
-    // sessions this one account also casts the guest's votes).
-    const mySide = v.session.personAId === userId ? 'PERSON_A' : 'PERSON_B';
-    if (v.voter !== mySide) continue;
-    for (const g of v.title.genres) counts.set(g, (counts.get(g) ?? 0) + 1);
-  }
-
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([g]) => g);
-}
 
 /**
  * The card payload. Deliberately omits `overview` — the spec forbids plot
