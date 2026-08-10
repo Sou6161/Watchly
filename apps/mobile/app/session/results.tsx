@@ -303,11 +303,18 @@ function ServiceButtons({ title, region }: { title: PublicTitle; region: Region 
 }
 
 function MatchCard({ title, region }: { title: PublicTitle; region: Region }) {
+  const router = useRouter();
+
   return (
     <View style={s.match}>
       {/* Poster and text sit on one row; the play buttons get the full card width
-          below, so a long service name never has to share a line with the poster. */}
-      <View style={s.matchTop}>
+          below, so a long service name never has to share a line with the poster.
+          The whole row opens details — neither the poster nor the title is
+          already spoken for by another gesture here. */}
+      <Pressable
+        onPress={() => router.push(`/title/${title.id}`)}
+        style={({ pressed }) => [s.matchTop, pressed && s.cardPressed]}
+      >
         {title.posterUrl ? (
           <Image source={{ uri: title.posterUrl }} style={s.poster} resizeMode="cover" />
         ) : (
@@ -322,7 +329,7 @@ function MatchCard({ title, region }: { title: PublicTitle; region: Region }) {
             {titleFacts(title)}
           </Text>
         </View>
-      </View>
+      </Pressable>
 
       <ServiceButtons title={title} region={region} />
     </View>
@@ -361,9 +368,14 @@ function NearMissCard({
         ? `${otherName} never got to it`
         : `${otherName} passed`;
 
+  const router = useRouter();
+
   return (
     <View style={s.match}>
-      <View style={s.matchTop}>
+      <Pressable
+        onPress={() => router.push(`/title/${title.id}`)}
+        style={({ pressed }) => [s.matchTop, pressed && s.cardPressed]}
+      >
         {title.posterUrl ? (
           <Image source={{ uri: title.posterUrl }} style={s.poster} resizeMode="cover" />
         ) : (
@@ -381,7 +393,7 @@ function NearMissCard({
             {titleFacts(title)}
           </Text>
         </View>
-      </View>
+      </Pressable>
 
       <ServiceButtons title={title} region={region} />
     </View>
@@ -416,6 +428,7 @@ const s = StyleSheet.create({
     elevation: 6,
   },
   matchTop: { flexDirection: 'row', gap: spacing.md },
+  cardPressed: { opacity: 0.8 },
   poster: {
     width: 84,
     // 2:3 is the poster aspect TMDB actually ships; 92x138 was close but off, so

@@ -128,22 +128,27 @@ function Profile({ profile, name }: { profile: TasteProfile; name: string }) {
       {/* The loop, closed: the last thing you actually watched. Gives the
           "watched together" number a face. */}
       {profile.lastWatched && (
-        <Animated.View entering={FadeInDown.delay(80).duration(420)} style={s.lastWatched}>
-          {profile.lastWatched.posterUrl ? (
-            <Image
-              source={{ uri: profile.lastWatched.posterUrl }}
-              style={s.lwPoster}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={[s.lwPoster, s.lwPosterEmpty]} />
-          )}
-          <View style={s.lwBody}>
-            <Text style={s.lwEyebrow}>Last watched together</Text>
-            <Text style={s.lwTitle} numberOfLines={3}>
-              {profile.lastWatched.title}
-            </Text>
-          </View>
+        <Animated.View entering={FadeInDown.delay(80).duration(420)}>
+          <Pressable
+            onPress={() => router.push(`/title/${profile.lastWatched!.id}`)}
+            style={({ pressed }) => [s.lastWatched, pressed && s.lwPressed]}
+          >
+            {profile.lastWatched.posterUrl ? (
+              <Image
+                source={{ uri: profile.lastWatched.posterUrl }}
+                style={s.lwPoster}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[s.lwPoster, s.lwPosterEmpty]} />
+            )}
+            <View style={s.lwBody}>
+              <Text style={s.lwEyebrow}>Last watched together</Text>
+              <Text style={s.lwTitle} numberOfLines={3}>
+                {profile.lastWatched.title}
+              </Text>
+            </View>
+          </Pressable>
         </Animated.View>
       )}
 
@@ -252,6 +257,7 @@ const s = StyleSheet.create({
     borderColor: colors.border,
     alignItems: 'center',
   },
+  lwPressed: { opacity: 0.8 },
   lwPoster: { width: 60, height: 90, borderRadius: radii.sm, backgroundColor: colors.purple },
   lwPosterEmpty: { opacity: 0.5 },
   lwBody: { flex: 1, minWidth: 0 },

@@ -34,6 +34,16 @@ export interface PublicTitle {
   // No `overview` — plot synopses are spoilers and never reach a card.
 }
 
+/**
+ * The details-screen payload — everything a card has, plus the plot and the
+ * original-language code. The only place in the app `overview` ever appears;
+ * every card/list endpoint deliberately omits it to avoid spoiling the swipe.
+ */
+export interface TitleDetail extends PublicTitle {
+  overview: string | null;
+  language: string | null;
+}
+
 export interface PublicSession {
   id: string;
   code: string;

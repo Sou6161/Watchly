@@ -45,12 +45,24 @@ export const spacing = {
   xxl: 48,
 } as const;
 
+/**
+ * Fraunces (headers) + Plus Jakarta Sans (everything else). Both loaded in
+ * app/_layout.tsx.
+ *
+ * Chosen for who this app is actually for: two people (or a group of friends)
+ * deciding on a movie night together. Fraunces is a warm, slightly soft serif —
+ * it reads as a film title card without tipping into the stiff, formal register
+ * of something like Playfair, which suits couples AND a friend group equally
+ * well. Plus Jakarta Sans is a rounded, humanist sans built for exactly this kind
+ * of social, lifestyle-facing product — friendlier and less "corporate SaaS
+ * dashboard" than the Inter/system-font default almost everything else reaches
+ * for.
+ */
 export const fonts = {
-  /** Headers. Loaded in app/_layout.tsx. */
-  display: 'DMSerifDisplay_400Regular',
-  body: 'Inter_400Regular',
-  bodyMedium: 'Inter_500Medium',
-  bodySemi: 'Inter_600SemiBold',
+  display: 'Fraunces_600SemiBold',
+  body: 'PlusJakartaSans_400Regular',
+  bodyMedium: 'PlusJakartaSans_500Medium',
+  bodySemi: 'PlusJakartaSans_600SemiBold',
 } as const;
 
 export const type = {

@@ -119,7 +119,11 @@ export default function Surprise() {
               )}
             </Pressable>
 
-            <Text style={s.pickTitle}>{title.title}</Text>
+            {/* Poster is already claimed by "tap for trailer" above — the title
+                opens details instead. */}
+            <Pressable onPress={() => router.push(`/title/${title.id}`)}>
+              <Text style={s.pickTitle}>{title.title}</Text>
+            </Pressable>
             <Text style={s.pickFacts}>{facts(title)}</Text>
 
             <View style={s.pickButtons}>

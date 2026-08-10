@@ -109,6 +109,7 @@ export default function PastSession() {
 }
 
 function MatchCard({ title, region }: { title: PublicTitle; region: Region }) {
+  const router = useRouter();
   const services = (title.watchProviders[region]?.flatrate ?? [])
     .map(serviceById)
     .filter((svc) => svc !== undefined);
@@ -123,7 +124,10 @@ function MatchCard({ title, region }: { title: PublicTitle; region: Region }) {
 
   return (
     <View style={s.match}>
-      <View style={s.matchTop}>
+      <Pressable
+        onPress={() => router.push(`/title/${title.id}`)}
+        style={({ pressed }) => [s.matchTop, pressed && s.pressed]}
+      >
         {title.posterUrl ? (
           <Image source={{ uri: title.posterUrl }} style={s.poster} resizeMode="cover" />
         ) : (
@@ -137,7 +141,7 @@ function MatchCard({ title, region }: { title: PublicTitle; region: Region }) {
             {facts}
           </Text>
         </View>
-      </View>
+      </Pressable>
 
       <View style={s.services}>
         {services.map((svc) => (

@@ -214,6 +214,26 @@ describe('title queue', () => {
     expect(biasedAvg).toBeLessThan(10); // never the WHOLE deck — variety survives
   });
 
+  it('the details endpoint includes the overview; the card endpoint never does', async () => {
+    const a = await signUp('a@example.com', 'A');
+    const [t] = await seedTitles(1, { overview: 'A butler did something.' });
+
+    const queue = await request(app).get('/api/titles/queue').set(auth(a.accessToken)).expect(200);
+    expect(queue.body.titles[0].overview).toBeUndefined();
+
+    const detail = await request(app).get(`/api/titles/${t!.id}`).set(auth(a.accessToken)).expect(200);
+    expect(detail.body.title.overview).toBe('A butler did something.');
+    expect(detail.body.title.id).toBe(t!.id);
+  });
+
+  it('404s a details lookup for an unknown title id', async () => {
+    const a = await signUp('a@example.com', 'A');
+    await request(app)
+      .get('/api/titles/not-a-real-id')
+      .set(auth(a.accessToken))
+      .expect(404);
+  });
+
   it('rejects an unknown service', async () => {
     const a = await signUp('a@example.com', 'A');
     await request(app)

@@ -111,6 +111,7 @@ function FenceCard({
   region: Region;
   onTrailer: () => void;
 }) {
+  const router = useRouter();
   const facts = [
     title.releaseYear,
     title.runtime && (title.type === 'TV' ? `${title.runtime}m eps` : `${title.runtime}m`),
@@ -138,7 +139,12 @@ function FenceCard({
           )}
         </Pressable>
 
-        <View style={s.cardBody}>
+        {/* Poster is already claimed by "tap for trailer" above — the title is
+            the details affordance instead, so the two never compete. */}
+        <Pressable
+          onPress={() => router.push(`/title/${title.id}`)}
+          style={({ pressed }) => [s.cardBody, pressed && s.pressed]}
+        >
           <Text style={s.cardTitle} numberOfLines={3}>
             {title.title}
           </Text>
@@ -146,7 +152,7 @@ function FenceCard({
             {facts}
           </Text>
           {title.trailerYoutubeIds.length > 0 && <Text style={s.trailerHint}>▶ Tap poster for trailer</Text>}
-        </View>
+        </Pressable>
       </View>
 
       <View style={s.cardButtons}>

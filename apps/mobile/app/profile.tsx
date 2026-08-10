@@ -301,7 +301,7 @@ const s = StyleSheet.create({
   removeText: { ...type.caption, color: colors.danger },
   pressed: { opacity: 0.7 },
 
-  footer: { gap: spacing.sm, paddingBottom: spacing.md },
+  footer: { gap: spacing.sm, paddingVertical: spacing.md },
   saved: { ...type.caption, color: colors.gold, textAlign: 'center' },
 
   deleteLink: { alignSelf: 'center', paddingVertical: spacing.sm },

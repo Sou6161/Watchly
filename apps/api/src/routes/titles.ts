@@ -207,6 +207,34 @@ titlesRouter.get(
 );
 
 /**
+ * GET /api/titles/:id — the full details for one cached title.
+ *
+ * Registered LAST among these routes, after queue/surprise/watchlist, for the
+ * same reason sessions.ts registers watch-check above /:id: Express matches
+ * path patterns in registration order, so a literal route ahead of a param
+ * route wins — the reverse would swallow "queue" as if it were a title id.
+ *
+ * Unlike every other title payload in the app, this ONE includes `overview`.
+ * That's deliberate, not an oversight: the spec's "no plot synopsis" rule is
+ * about the swipe deck specifically — a spoiler mid-decision. Once someone has
+ * tapped through to ask for more about a title they already matched,
+ * watchlisted, or got as a Surprise pick, showing them the plot is the entire
+ * point of a details screen.
+ *
+ * No ownership check: a title id is an unguessable cuid, and everything here is
+ * public TMDB metadata already served (minus overview) by every other title
+ * endpoint to any signed-in user.
+ */
+titlesRouter.get(
+  '/:id',
+  wrap(async (req, res) => {
+    const title = await prisma.title.findUnique({ where: { id: req.params.id } });
+    if (!title) throw ApiError.notFound('That title isn’t in the catalogue any more.');
+    res.json({ title: toDetailedTitle(title) });
+  }),
+);
+
+/**
  * The card payload. Deliberately omits `overview` — the spec forbids plot
  * synopses on cards, and the surest way to honour that is to never ship them.
  */
@@ -223,6 +251,16 @@ export function toPublicTitle(t: Title) {
     runtime: t.runtime,
     rating: t.rating,
     watchProviders: t.watchProviders,
+  };
+}
+
+/** The details-screen payload — everything a card has, plus the plot and the
+ *  original-language code. See the /:id route above for why overview is safe here. */
+export function toDetailedTitle(t: Title) {
+  return {
+    ...toPublicTitle(t),
+    overview: t.overview,
+    language: t.language,
   };
 }
 

@@ -1,14 +1,24 @@
-import { useEffect } from 'react';
-import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { useEffect, useState } from 'react';
+import { StyleSheet } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider, DarkTheme } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { useFonts, DMSerifDisplay_400Regular } from '@expo-google-fonts/dm-serif-display';
-import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
+import * as SplashScreen from 'expo-splash-screen';
+import { useFonts, Fraunces_600SemiBold } from '@expo-google-fonts/fraunces';
+import {
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+} from '@expo-google-fonts/plus-jakarta-sans';
 import { useAuthLoading, useAuthStore, useUser } from '../src/stores/auth';
+import { AnimatedSplash } from '../src/components/AnimatedSplash';
 import { initAnalytics } from '../src/lib/analytics';
 import { colors } from '../src/theme';
+
+// Keep the native splash up until the tree paints — the animated splash takes
+// over from there, so the hand-off is seamless and never flashes a blank frame.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 /**
  * Sends the user wherever their auth state says they belong, and — critically —
@@ -90,29 +100,39 @@ const navTheme = {
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
-    DMSerifDisplay_400Regular,
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
+    Fraunces_600SemiBold,
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
   });
 
-  // Hold rather than flash system-font text that reflows once the real fonts
-  // land. fontError still lets us through — shipping in a fallback font beats a
-  // permanently blank screen. The spinner matters: an empty View here is
-  // indistinguishable from a crash, which is exactly how the last blank-screen
-  // bug managed to hide.
-  if (!fontsLoaded && !fontError) {
-    return (
-      <View style={s.boot}>
-        <ActivityIndicator color={colors.red} />
-      </View>
-    );
-  }
+  const [splashDone, setSplashDone] = useState(false);
+
+  // Fonts drive readiness: mounting the tree in a fallback font would reflow the
+  // moment DM Serif lands. fontError still lets us through — shipping in a system
+  // font beats a permanently blank screen.
+  const ready = fontsLoaded || fontError;
+
+  // Hide the NATIVE splash the moment we're ready to render — not from an
+  // onLayout callback. onLayout depends on a native view event actually firing,
+  // which is exactly the kind of thing that can silently never happen (especially
+  // under Expo Go's own splash handling) and leaves the app stuck behind the
+  // native splash forever. A plain effect keyed on `ready` is the documented,
+  // reliable way to do this.
+  useEffect(() => {
+    if (ready) SplashScreen.hideAsync().catch(() => {});
+  }, [ready]);
+
+  // Return null, not a spinner: the native splash is still covering the screen, so
+  // there's nothing to see behind it and nothing to flash.
+  if (!ready) return null;
 
   return (
     <GestureHandlerRootView style={s.flex}>
       <StatusBar style="light" />
       <RootNavigator />
+      {/* Sits above the app and dissolves once its animation completes. */}
+      {!splashDone && <AnimatedSplash onFinish={() => setSplashDone(true)} />}
     </GestureHandlerRootView>
   );
 }
@@ -120,10 +140,4 @@ export default function RootLayout() {
 const s = StyleSheet.create({
   // Dark, so even the root view behind the navigator never flashes white.
   flex: { flex: 1, backgroundColor: colors.bgBottom },
-  boot: {
-    flex: 1,
-    backgroundColor: colors.bgTop,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 });
