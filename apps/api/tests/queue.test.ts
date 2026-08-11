@@ -255,6 +255,22 @@ describe('title queue', () => {
     ]);
   });
 
+  it('serves an unenriched title gracefully when there is no TMDB key to self-heal it with', async () => {
+    const a = await signUp('a@example.com', 'A');
+    // seedTitles never sets backdropUrl/topCast/recommendations, so this row
+    // looks exactly like a pre-enrichment cached title — the self-heal attempt
+    // in GET /:id should try, fail silently (blank key in tests), and still
+    // serve everything that WAS already cached rather than erroring.
+    const [t] = await seedTitles(1);
+
+    const res = await request(app).get(`/api/titles/${t!.id}`).set(auth(a.accessToken)).expect(200);
+
+    expect(res.body.title.id).toBe(t!.id);
+    expect(res.body.title.title).toBe(t!.title);
+    expect(res.body.title.backdropUrl).toBeNull();
+    expect(res.body.title.topCast).toEqual([]);
+  });
+
   it('resolves an already-cached recommendation without touching TMDB', async () => {
     const a = await signUp('a@example.com', 'A');
     const [t] = await seedTitles(1);

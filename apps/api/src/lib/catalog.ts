@@ -140,6 +140,32 @@ export async function getOrFetchTitle(
   const existing = await prisma.title.findUnique({ where: { tmdbId_type: { tmdbId, type } } });
   if (existing) return existing;
 
+  const row = await buildFullRow(tmdbId, type, region);
+  if (!row) return null;
+
+  try {
+    return await prisma.title.create({ data: row });
+  } catch {
+    // Lost a create race against another request resolving the same tmdbId at
+    // the same moment (the unique constraint rejects the second insert) — the
+    // row now exists, so just read what won.
+    return prisma.title.findUnique({ where: { tmdbId_type: { tmdbId, type } } });
+  }
+}
+
+/**
+ * A full TMDB fetch, shaped into everything a Title row needs — shared by
+ * getOrFetchTitle (a CREATE, for a title never seen before) and
+ * refreshIfIncomplete (an UPDATE, for a title cached before the details-screen
+ * enrichment fields existed). Returns null rather than throwing whenever there's
+ * nothing usable to write: no TMDB key configured, or TMDB 4xx'd/errored on this
+ * id — both callers treat that as "leave whatever's already there alone."
+ */
+async function buildFullRow(
+  tmdbId: number,
+  type: 'MOVIE' | 'TV',
+  region: Region,
+): Promise<Prisma.TitleCreateInput | null> {
   // No key: nothing we can fetch. Matches ensureQueue's degrade-gracefully rule,
   // and keeps this reachable from tests without a network dependency.
   if (!env.TMDB_API_KEY) return null;
@@ -150,8 +176,6 @@ export async function getOrFetchTitle(
   try {
     d = await detail(media, tmdbId);
   } catch {
-    // TMDB 4xx'd (deleted/merged id) or the network had a bad day — either way,
-    // this is one optional tap on an already-working screen, not worth retrying.
     return null;
   }
 
@@ -159,7 +183,7 @@ export async function getOrFetchTitle(
   const date = d.release_date || d.first_air_date;
   const runtime = media === 'movie' ? d.runtime : d.episode_run_time?.[0];
 
-  const row: Prisma.TitleCreateInput = {
+  return {
     tmdbId,
     type,
     title: d.title ?? d.name ?? 'Untitled',
@@ -179,15 +203,38 @@ export async function getOrFetchTitle(
     popularity: d.popularity ?? 0,
     cachedAt: new Date(),
   };
+}
 
-  try {
-    return await prisma.title.create({ data: row });
-  } catch {
-    // Lost a create race against another request resolving the same tmdbId at
-    // the same moment (the unique constraint rejects the second insert) — the
-    // row now exists, so just read what won.
-    return prisma.title.findUnique({ where: { tmdbId_type: { tmdbId, type } } });
-  }
+/**
+ * Self-heals a title's record when it looks like it predates the details-screen
+ * enrichment (backdrop/cast/recommendations all still empty) or has simply gone
+ * stale. This is what makes opening ANY title's details page — one cached last
+ * night or eight months ago — fill in the new fields on the very next view,
+ * rather than waiting on the lazy queue refresh (which only touches titles
+ * someone is actively being dealt, capped at 8 a request) or the next nightly
+ * sync.
+ *
+ * Silent no-op if TMDB is unreachable or unconfigured, or the row already looks
+ * complete and fresh — a details page that already has a poster and an overview
+ * to show must never block or blank out over a background enrichment attempt.
+ */
+export async function refreshIfIncomplete(
+  prisma: PrismaClient,
+  title: Title,
+  region: Region,
+): Promise<Title> {
+  const looksUnenriched =
+    title.backdropUrl === null &&
+    (title.topCast as unknown[]).length === 0 &&
+    (title.recommendations as unknown[]).length === 0;
+
+  const staleCutoff = new Date(Date.now() - STALE_AFTER_DAYS * 24 * 60 * 60 * 1000);
+  if (!looksUnenriched && title.cachedAt >= staleCutoff) return title;
+
+  const row = await buildFullRow(title.tmdbId, title.type, region);
+  if (!row) return title;
+
+  return prisma.title.update({ where: { id: title.id }, data: row });
 }
 
 /**

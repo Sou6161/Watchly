@@ -20,7 +20,7 @@ import { ApiError, wrap } from '../lib/errors.js';
 import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js';
 import { parseBody } from '../lib/validate.js';
 import type { QueueFilters } from '../lib/queue.js';
-import { ensureQueue, getOrFetchTitle } from '../lib/catalog.js';
+import { ensureQueue, getOrFetchTitle, refreshIfIncomplete } from '../lib/catalog.js';
 import { lovedGenres } from '../lib/taste.js';
 
 export const titlesRouter = Router();
@@ -225,12 +225,19 @@ titlesRouter.get(
  * No ownership check: a title id is an unguessable cuid, and everything here is
  * public TMDB metadata already served (minus overview) by every other title
  * endpoint to any signed-in user.
+ *
+ * Self-healing: refreshIfIncomplete re-fetches the row from TMDB in place when
+ * it looks like it predates the enrichment fields (or has simply gone stale), so
+ * opening an old title's details page is what backfills it — not a manual sync
+ * trigger or an overnight wait.
  */
 titlesRouter.get(
   '/:id',
   wrap(async (req, res) => {
-    const title = await prisma.title.findUnique({ where: { id: req.params.id } });
+    const me = (req as AuthedRequest).user;
+    let title = await prisma.title.findUnique({ where: { id: req.params.id } });
     if (!title) throw ApiError.notFound('That title isn’t in the catalogue any more.');
+    title = await refreshIfIncomplete(prisma, title, me.region as Region);
     res.json({ title: toDetailedTitle(title) });
   }),
 );
