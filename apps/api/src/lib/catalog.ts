@@ -1,6 +1,12 @@
 import type { Prisma, PrismaClient, Title } from '@prisma/client';
-import { STREAMING_SERVICES, providerIdsInRegion, type Region } from '@watchly/shared';
+import { REGIONS, STREAMING_SERVICES, providerIdsInRegion, type Region } from '@watchly/shared';
 import { POSTER_BASE, detail, discover, genreMap, pickTrailers } from './tmdb.js';
+import {
+  extractBackdrop,
+  extractCast,
+  extractCertifications,
+  extractRecommendations,
+} from './titleExtract.js';
 import { buildQueue, type QueueFilters } from './queue.js';
 import { env } from '../env.js';
 
@@ -106,6 +112,82 @@ export async function ensureQueue(
   }
 
   return queue;
+}
+
+/**
+ * Finds a title by its TMDB id, fetching and caching it if we've genuinely never
+ * seen it before. Backs "more like this": TMDB's recommendations reference plenty
+ * of titles nobody has ever swiped on, so there's often no local row yet — this is
+ * what turns a tap into a real, permanent Title the details screen can open.
+ *
+ * Deliberately does NOT apply the swipe-deck's "must have a trailer and a local
+ * provider" gate. That gate exists to keep dead cards out of a deck someone is
+ * actively swiping; a details page for a recommendation is a different context —
+ * showing "no trailer available" or hiding the play buttons is an honest, fine
+ * outcome there (both already degrade gracefully), and dropping the title
+ * entirely would make half of "more like this" silently unclickable.
+ *
+ * Returns null only if there's truly nothing to serve (no TMDB key configured, or
+ * TMDB has no record of this id) — never throws, since a dead recommendation tap
+ * should fail quietly, not crash the details screen the user is already on.
+ */
+export async function getOrFetchTitle(
+  prisma: PrismaClient,
+  tmdbId: number,
+  type: 'MOVIE' | 'TV',
+  region: Region,
+): Promise<Title | null> {
+  const existing = await prisma.title.findUnique({ where: { tmdbId_type: { tmdbId, type } } });
+  if (existing) return existing;
+
+  // No key: nothing we can fetch. Matches ensureQueue's degrade-gracefully rule,
+  // and keeps this reachable from tests without a network dependency.
+  if (!env.TMDB_API_KEY) return null;
+
+  const media = type === 'MOVIE' ? 'movie' : 'tv';
+
+  let d;
+  try {
+    d = await detail(media, tmdbId);
+  } catch {
+    // TMDB 4xx'd (deleted/merged id) or the network had a bad day — either way,
+    // this is one optional tap on an already-working screen, not worth retrying.
+    return null;
+  }
+
+  const lookup = providerLookup(region);
+  const date = d.release_date || d.first_air_date;
+  const runtime = media === 'movie' ? d.runtime : d.episode_run_time?.[0];
+
+  const row: Prisma.TitleCreateInput = {
+    tmdbId,
+    type,
+    title: d.title ?? d.name ?? 'Untitled',
+    posterUrl: d.poster_path ? `${POSTER_BASE}${d.poster_path}` : null,
+    backdropUrl: extractBackdrop(d),
+    trailerYoutubeIds: pickTrailers(d.videos?.results ?? []),
+    genres: d.genres.map((g) => g.name),
+    releaseYear: date ? Number(date.slice(0, 4)) : null,
+    runtime: runtime ?? null,
+    rating: d.vote_average ?? null,
+    overview: d.overview || null,
+    language: d.original_language ?? null,
+    topCast: extractCast(d) as unknown as Prisma.InputJsonValue,
+    certifications: extractCertifications(d, media, REGIONS) as unknown as Prisma.InputJsonValue,
+    recommendations: extractRecommendations(d, media) as unknown as Prisma.InputJsonValue,
+    watchProviders: mapProviders(d, lookup, region) as unknown as Prisma.InputJsonValue,
+    popularity: d.popularity ?? 0,
+    cachedAt: new Date(),
+  };
+
+  try {
+    return await prisma.title.create({ data: row });
+  } catch {
+    // Lost a create race against another request resolving the same tmdbId at
+    // the same moment (the unique constraint rejects the second insert) — the
+    // row now exists, so just read what won.
+    return prisma.title.findUnique({ where: { tmdbId_type: { tmdbId, type } } });
+  }
 }
 
 /**
@@ -306,6 +388,7 @@ async function buildTitleRow(
     type: media === 'movie' ? 'MOVIE' : 'TV',
     title: item.title ?? item.name ?? 'Untitled',
     posterUrl: item.poster_path ? `${POSTER_BASE}${item.poster_path}` : null,
+    backdropUrl: extractBackdrop(d),
     trailerYoutubeIds,
     genres: d.genres.map((g) => g.name),
     releaseYear: date ? Number(date.slice(0, 4)) : null,
@@ -314,6 +397,9 @@ async function buildTitleRow(
     // Cached but never sent to a card — the spec forbids plot synopses (spoilers).
     overview: item.overview || null,
     language: item.original_language,
+    topCast: extractCast(d) as unknown as Prisma.InputJsonValue,
+    certifications: extractCertifications(d, media, REGIONS) as unknown as Prisma.InputJsonValue,
+    recommendations: extractRecommendations(d, media) as unknown as Prisma.InputJsonValue,
     watchProviders: watchProviders as unknown as Prisma.InputJsonValue,
     popularity: item.popularity,
     cachedAt: new Date(),

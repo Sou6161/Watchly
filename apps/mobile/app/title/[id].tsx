@@ -1,19 +1,26 @@
 import { useEffect, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { ActivityIndicator } from 'react-native';
 import { PlayButtons } from '../../src/components/PlayButtons';
 import { TrailerModal } from '../../src/components/TrailerModal';
 import { ErrorState } from '../../src/components/states';
 import { useUser } from '../../src/stores/auth';
 import { api } from '../../src/lib/api';
 import { track } from '../../src/lib/analytics';
-import type { TitleDetail } from '../../src/lib/types';
+import type { TitleDetail, TitleRecommendation } from '../../src/lib/types';
 import { colors, radii, spacing, type } from '../../src/theme';
 
 /** ISO-639-1 -> a human name, for the languages this catalogue actually returns.
@@ -56,6 +63,9 @@ export default function TitleDetails() {
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [trailerOpen, setTrailerOpen] = useState(false);
+  // Which recommendation is mid-resolve, so only THAT thumbnail shows a spinner
+  // rather than blocking the whole screen for what's usually a sub-second lookup.
+  const [resolving, setResolving] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,21 +122,46 @@ export default function TitleDetails() {
     );
   }
 
+  const certification = title.certifications[user.region];
   const facts = [
     title.releaseYear,
     title.runtime && (title.type === 'TV' ? `${title.runtime}m / episode` : `${title.runtime}m`),
     title.language && (LANGUAGE_NAMES[title.language] ?? title.language.toUpperCase()),
   ].filter(Boolean);
 
+  /** A "more like this" tap has no title id yet — only a tmdbId. Resolve it into
+   *  a real, cached title first, then navigate exactly like any other tap. */
+  const openRecommendation = async (rec: TitleRecommendation) => {
+    if (resolving !== null) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setResolving(rec.tmdbId);
+    try {
+      const res = await api<{ title: TitleDetail }>('/api/titles/resolve', {
+        method: 'POST',
+        body: { tmdbId: rec.tmdbId, type: rec.type },
+      });
+      router.push(`/title/${res.title.id}`);
+    } catch {
+      // Non-fatal — this is a bonus row, not the point of the screen. The
+      // thumbnail just stops spinning and nothing happens.
+    } finally {
+      setResolving(null);
+    }
+  };
+
   return (
     <View style={s.root}>
       <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
-        {/* Cinematic hero: the poster itself, softened and darkened into a
-            backdrop, with the crisp card floating in front. Full-bleed under the
-            status bar on purpose — a details page is the one screen in the app
-            that earns an edge-to-edge moment. */}
+        {/* Cinematic hero. A real backdrop shot renders crisp and full quality —
+            it's already a wide, hero-shaped image. Older cached titles from
+            before backdrops were tracked (or the rare TMDB entry with none) fall
+            back to the poster itself, softened into a backdrop with a blur.
+            Full-bleed under the status bar on purpose — a details page is the
+            one screen in the app that earns an edge-to-edge moment. */}
         <View style={s.hero}>
-          {title.posterUrl ? (
+          {title.backdropUrl ? (
+            <Image source={{ uri: title.backdropUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          ) : title.posterUrl ? (
             <Image
               source={{ uri: title.posterUrl }}
               style={StyleSheet.absoluteFill}
@@ -155,11 +190,16 @@ export default function TitleDetails() {
         <Animated.View entering={FadeInDown.delay(80).duration(420)} style={s.body}>
           <Text style={s.title}>{title.title}</Text>
 
-          {facts.length > 0 && (
+          {(facts.length > 0 || certification) && (
             <View style={s.factsRow}>
+              {certification && (
+                <View style={s.certBadge}>
+                  <Text style={s.certText}>{certification}</Text>
+                </View>
+              )}
               {facts.map((f, i) => (
                 <View key={i} style={s.factGroup}>
-                  {i > 0 && <View style={s.factDot} />}
+                  {(i > 0 || certification) && <View style={s.factDot} />}
                   <Text style={s.fact}>{f}</Text>
                 </View>
               ))}
@@ -206,9 +246,72 @@ export default function TitleDetails() {
             </View>
           )}
 
+          {title.topCast.length > 0 && (
+            <View style={s.section}>
+              <Text style={s.sectionLabel}>Cast</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={s.castRow}
+              >
+                {title.topCast.map((c, i) => (
+                  <View key={`${c.name}-${i}`} style={s.castCard}>
+                    {c.profileUrl ? (
+                      <Image source={{ uri: c.profileUrl }} style={s.castPhoto} resizeMode="cover" />
+                    ) : (
+                      <View style={[s.castPhoto, s.castPhotoEmpty]}>
+                        <Text style={s.castInitial}>{c.name.charAt(0)}</Text>
+                      </View>
+                    )}
+                    <Text style={s.castName} numberOfLines={1}>
+                      {c.name}
+                    </Text>
+                    <Text style={s.castCharacter} numberOfLines={1}>
+                      {c.character}
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
           <View style={s.section}>
             <PlayButtons title={title} region={user.region} />
           </View>
+
+          {title.recommendations.length > 0 && (
+            <View style={s.section}>
+              <Text style={s.sectionLabel}>More like this</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={s.recRow}
+              >
+                {title.recommendations.map((rec) => (
+                  <Pressable
+                    key={rec.tmdbId}
+                    onPress={() => openRecommendation(rec)}
+                    disabled={resolving !== null}
+                    style={({ pressed }) => [s.recCard, pressed && s.pressed]}
+                  >
+                    {rec.posterUrl ? (
+                      <Image source={{ uri: rec.posterUrl }} style={s.recPoster} resizeMode="cover" />
+                    ) : (
+                      <View style={[s.recPoster, s.posterEmpty]} />
+                    )}
+                    {resolving === rec.tmdbId && (
+                      <View style={[StyleSheet.absoluteFill, s.recLoading]}>
+                        <ActivityIndicator color={colors.text} size="small" />
+                      </View>
+                    )}
+                    <Text style={s.recTitle} numberOfLines={2}>
+                      {rec.title}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          )}
         </Animated.View>
       </ScrollView>
 
@@ -259,7 +362,10 @@ const s = StyleSheet.create({
   poster: { width: 130, height: 195, borderRadius: radii.card, backgroundColor: colors.purple },
   posterEmpty: { opacity: 0.5 },
 
-  body: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xxl },
+  // The poster card can overhang the hero's fixed height slightly on devices
+  // with a tall safe-area inset, so this needs real clearance, not just the
+  // usual spacing.lg gap — otherwise the title crowds right up against it.
+  body: { paddingHorizontal: spacing.lg, paddingTop: spacing.xxl, paddingBottom: spacing.xxl },
   title: { ...type.hero, fontSize: 30, lineHeight: 36, color: colors.text, textAlign: 'center' },
 
   factsRow: {
@@ -278,6 +384,15 @@ const s = StyleSheet.create({
   },
   fact: { ...type.caption, color: colors.textMuted },
   ratingStar: { ...type.caption, color: colors.gold, marginRight: 3 },
+  certBadge: {
+    borderWidth: 1,
+    borderColor: colors.textFaint,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    marginRight: spacing.sm,
+  },
+  certText: { ...type.caption, color: colors.textMuted, fontSize: 11 },
 
   genres: {
     flexDirection: 'row',
@@ -319,4 +434,27 @@ const s = StyleSheet.create({
     fontSize: 12,
   },
   overview: { ...type.body, color: colors.text, lineHeight: 24 },
+
+  castRow: { gap: spacing.md },
+  castCard: { width: 78, alignItems: 'center' },
+  castPhoto: { width: 64, height: 64, borderRadius: 32, backgroundColor: colors.purple },
+  castPhotoEmpty: { alignItems: 'center', justifyContent: 'center' },
+  castInitial: { ...type.title, fontSize: 22, color: colors.textMuted },
+  castName: { ...type.caption, color: colors.text, marginTop: spacing.sm, textAlign: 'center' },
+  castCharacter: { ...type.caption, color: colors.textFaint, fontSize: 11, textAlign: 'center' },
+
+  recRow: { gap: spacing.md },
+  recCard: { width: 110 },
+  recPoster: { width: 110, height: 165, borderRadius: radii.sm, backgroundColor: colors.purple },
+  recLoading: {
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 165,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(13,4,24,0.55)',
+    borderRadius: radii.sm,
+  },
+  recTitle: { ...type.caption, color: colors.textMuted, marginTop: spacing.sm },
 });

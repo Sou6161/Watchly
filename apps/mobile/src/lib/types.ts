@@ -34,14 +34,35 @@ export interface PublicTitle {
   // No `overview` — plot synopses are spoilers and never reach a card.
 }
 
+export interface CastMember {
+  name: string;
+  character: string;
+  profileUrl: string | null;
+}
+
+/** A "more like this" recommendation — not a full title, just enough to render a
+ *  thumbnail. Tapping one resolves it into a real title via /api/titles/resolve. */
+export interface TitleRecommendation {
+  tmdbId: number;
+  type: TitleType;
+  title: string;
+  posterUrl: string | null;
+}
+
 /**
- * The details-screen payload — everything a card has, plus the plot and the
- * original-language code. The only place in the app `overview` ever appears;
- * every card/list endpoint deliberately omits it to avoid spoiling the swipe.
+ * The details-screen payload — everything a card has, plus the plot, the
+ * original-language code, and the enrichment fields. The only place in the app
+ * `overview` ever appears; every card/list endpoint deliberately omits it to
+ * avoid spoiling the swipe.
  */
 export interface TitleDetail extends PublicTitle {
   overview: string | null;
   language: string | null;
+  backdropUrl: string | null;
+  topCast: CastMember[];
+  /** Age/content rating per region, e.g. { IN: "U/A 13+", US: "PG-13" }. */
+  certifications: Partial<Record<Region, string>>;
+  recommendations: TitleRecommendation[];
 }
 
 export interface PublicSession {

@@ -234,6 +234,52 @@ describe('title queue', () => {
       .expect(404);
   });
 
+  it('details include the enrichment fields (backdrop, cast, certification, recommendations)', async () => {
+    const a = await signUp('a@example.com', 'A');
+    const [t] = await seedTitles(1, {
+      backdropUrl: 'https://image.tmdb.org/t/p/w1280/example.jpg',
+      topCast: [{ name: 'Someone Famous', character: 'The Lead', profileUrl: null }],
+      certifications: { IN: 'U/A 13+', US: 'PG-13' },
+      recommendations: [{ tmdbId: 999, type: 'MOVIE', title: 'Something Similar', posterUrl: null }],
+    });
+
+    const res = await request(app).get(`/api/titles/${t!.id}`).set(auth(a.accessToken)).expect(200);
+
+    expect(res.body.title.backdropUrl).toBe('https://image.tmdb.org/t/p/w1280/example.jpg');
+    expect(res.body.title.topCast).toEqual([
+      { name: 'Someone Famous', character: 'The Lead', profileUrl: null },
+    ]);
+    expect(res.body.title.certifications).toEqual({ IN: 'U/A 13+', US: 'PG-13' });
+    expect(res.body.title.recommendations).toEqual([
+      { tmdbId: 999, type: 'MOVIE', title: 'Something Similar', posterUrl: null },
+    ]);
+  });
+
+  it('resolves an already-cached recommendation without touching TMDB', async () => {
+    const a = await signUp('a@example.com', 'A');
+    const [t] = await seedTitles(1);
+
+    // The test env's TMDB_API_KEY is blank — if this reached the network path
+    // it would throw, so a 200 here proves the "already cached" branch was taken.
+    const res = await request(app)
+      .post('/api/titles/resolve')
+      .set(auth(a.accessToken))
+      .send({ tmdbId: t!.tmdbId, type: 'MOVIE' })
+      .expect(200);
+
+    expect(res.body.title.id).toBe(t!.id);
+  });
+
+  it('404s resolving an uncached title when there is no TMDB key to fetch it with', async () => {
+    const a = await signUp('a@example.com', 'A');
+
+    await request(app)
+      .post('/api/titles/resolve')
+      .set(auth(a.accessToken))
+      .send({ tmdbId: 8675309, type: 'MOVIE' })
+      .expect(404);
+  });
+
   it('rejects an unknown service', async () => {
     const a = await signUp('a@example.com', 'A');
     await request(app)

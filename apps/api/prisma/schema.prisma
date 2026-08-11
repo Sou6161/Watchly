@@ -148,6 +148,29 @@ model Title {
   overview        String?
   language        String?
 
+  // A real widescreen shot for the details screen's hero. Nullable and backfilled
+  // opportunistically like everything else here — older cached rows fall back to
+  // a blurred poster client-side until they're next refreshed.
+  backdropUrl String?
+
+  // Top-billed cast, denormalized rather than related rows: [{ name, character,
+  // profileUrl }], capped at a handful. It's display-only (never joined against,
+  // never filtered on), so a JSON blob is simpler than a real Actor table and one
+  // fewer join on every detail fetch.
+  topCast Json @default("[]")
+
+  // Age/content rating per region, same shape as watchProviders:
+  //   { "IN": "U/A 13+", "US": "PG-13" }
+  // Movies and TV certify through entirely different TMDB endpoints (release_dates
+  // vs content_ratings); this column is the one shape both normalize into.
+  certifications Json @default("{}")
+
+  // TMDB's "more like this", denormalized to [{ tmdbId, type, title, posterUrl }]
+  // rather than a relation — most of these referenced titles aren't in OUR catalog
+  // yet (they were never swiped on), so there's no Title row to point a foreign
+  // key at until someone actually taps one. See getOrFetchTitle in catalog.ts.
+  recommendations Json @default("[]")
+
   // TMDB watch providers, keyed by region:
   //   { "IN": { "flatrate": ["netflix", "hotstar"] }, "US": { ... } }
   // Stored as our internal service ids, not TMDB provider ids, so the queue

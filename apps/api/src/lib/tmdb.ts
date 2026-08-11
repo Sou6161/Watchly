@@ -2,6 +2,10 @@ import { env } from '../env.js';
 
 const BASE = 'https://api.themoviedb.org/3';
 export const POSTER_BASE = 'https://image.tmdb.org/t/p/w780';
+/** Wide enough for a full-bleed hero without shipping a multi-MB original. */
+export const BACKDROP_BASE = 'https://image.tmdb.org/t/p/w1280';
+/** Small — these render as ~50px circular headshots in a cast row. */
+export const PROFILE_BASE = 'https://image.tmdb.org/t/p/w185';
 
 /**
  * TMDB issues two credential styles: a v3 API key (query param) and a v4 read
@@ -105,8 +109,33 @@ interface TmdbProviderEntry {
   provider_name: string;
 }
 
+interface TmdbCastMember {
+  name: string;
+  character: string;
+  profile_path: string | null;
+  order: number;
+}
+
+interface TmdbReleaseDateEntry {
+  certification: string;
+  type: number; // 3 = theatrical, the one worth preferring when several exist
+}
+
 export interface TmdbDetail {
   id: number;
+  // These live on the detail response directly (no append needed) — used by
+  // getOrFetchTitle, which has no /discover list item to pull them from instead.
+  title?: string; // movies
+  name?: string; // tv
+  poster_path?: string | null;
+  backdrop_path?: string | null;
+  release_date?: string;
+  first_air_date?: string;
+  vote_average?: number;
+  popularity?: number;
+  original_language?: string;
+  overview?: string;
+
   runtime?: number; // movies
   episode_run_time?: number[]; // tv
   genres: { id: number; name: string }[];
@@ -117,6 +146,13 @@ export interface TmdbDetail {
       { flatrate?: TmdbProviderEntry[]; free?: TmdbProviderEntry[]; ads?: TmdbProviderEntry[] }
     >;
   };
+  credits?: { cast: TmdbCastMember[] };
+  // Movies only (append key "release_dates"). Certification is nested one level
+  // deeper than TV's, and repeated per release type (theatrical, digital, ...).
+  release_dates?: { results: { iso_3166_1: string; release_dates: TmdbReleaseDateEntry[] }[] };
+  // TV only (append key "content_ratings"). Flat — one rating per country.
+  content_ratings?: { results: { iso_3166_1: string; rating: string }[] };
+  recommendations?: { results: TmdbListItem[] };
 }
 
 export function listPage(
@@ -160,9 +196,21 @@ export async function genreMap(media: 'movie' | 'tv'): Promise<Map<string, numbe
   return new Map(res.genres.map((g) => [g.name, g.id]));
 }
 
-/** One call gets details, trailers, and providers — 3x fewer requests than separate hits. */
+/**
+ * One call gets details, trailers, providers, cast, certification, and
+ * recommendations — appending more `append_to_response` keys costs nothing
+ * extra over the network (still one request), just a larger JSON body.
+ *
+ * Certification lives at a different key per media type: movies certify through
+ * `release_dates`, TV through `content_ratings`. There's no third option that
+ * works for both, so this picks the right one rather than requesting both and
+ * discarding half.
+ */
 export function detail(media: 'movie' | 'tv', id: number): Promise<TmdbDetail> {
-  return tmdb<TmdbDetail>(`/${media}/${id}`, { append_to_response: 'videos,watch/providers' });
+  const certKey = media === 'movie' ? 'release_dates' : 'content_ratings';
+  return tmdb<TmdbDetail>(`/${media}/${id}`, {
+    append_to_response: `videos,watch/providers,credits,${certKey},recommendations`,
+  });
 }
 
 /** All flatrate/free/ads providers TMDB knows about in a region — used to verify our catalog. */

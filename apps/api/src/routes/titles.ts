@@ -18,8 +18,9 @@ import {
 import { prisma } from '../lib/prisma.js';
 import { ApiError, wrap } from '../lib/errors.js';
 import { requireAuth, type AuthedRequest } from '../middleware/requireAuth.js';
+import { parseBody } from '../lib/validate.js';
 import type { QueueFilters } from '../lib/queue.js';
-import { ensureQueue } from '../lib/catalog.js';
+import { ensureQueue, getOrFetchTitle } from '../lib/catalog.js';
 import { lovedGenres } from '../lib/taste.js';
 
 export const titlesRouter = Router();
@@ -254,14 +255,58 @@ export function toPublicTitle(t: Title) {
   };
 }
 
-/** The details-screen payload — everything a card has, plus the plot and the
- *  original-language code. See the /:id route above for why overview is safe here. */
+/** The details-screen payload — everything a card has, plus the plot, the
+ *  original-language code, and the enrichment fields (backdrop, cast,
+ *  certification, recommendations). See the /:id route above for why overview
+ *  is safe here. */
 export function toDetailedTitle(t: Title) {
   return {
     ...toPublicTitle(t),
     overview: t.overview,
     language: t.language,
+    backdropUrl: t.backdropUrl,
+    topCast: t.topCast as unknown as { name: string; character: string; profileUrl: string | null }[],
+    certifications: t.certifications as unknown as Partial<Record<Region, string>>,
+    recommendations: t.recommendations as unknown as {
+      tmdbId: number;
+      type: 'MOVIE' | 'TV';
+      title: string;
+      posterUrl: string | null;
+    }[],
   };
 }
+
+const resolveSchema = z.object({
+  tmdbId: z.number().int().positive(),
+  type: z.enum(['MOVIE', 'TV']),
+});
+
+/**
+ * POST /api/titles/resolve — turns a "more like this" tap into a real, openable
+ * title.
+ *
+ * A recommendation on the details screen is denormalized TMDB metadata, not a
+ * Title id — most of them have never been swiped on, so there's nothing local to
+ * link to yet. This finds the cached row if one exists, or fetches and caches it
+ * on the spot (see getOrFetchTitle) so the client can navigate straight to
+ * /title/:id afterwards, same as any other title in the app.
+ *
+ * POST, not GET, because it can have a side effect (creating a row) — the usual
+ * REST reason, not a security one; there's nothing sensitive being resolved.
+ */
+titlesRouter.post(
+  '/resolve',
+  wrap(async (req, res) => {
+    const me = (req as AuthedRequest).user;
+    const { tmdbId, type } = parseBody(resolveSchema, req.body);
+
+    const title = await getOrFetchTitle(prisma, tmdbId, type, me.region as Region);
+    if (!title) {
+      throw ApiError.notFound('Couldn’t find that title.');
+    }
+
+    res.json({ title: toDetailedTitle(title) });
+  }),
+);
 
 export { RECENT_SWIPE_EXCLUSION_DAYS };

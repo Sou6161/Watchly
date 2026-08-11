@@ -2,6 +2,12 @@ import type { Prisma } from '@prisma/client';
 import { REGIONS, STREAMING_SERVICES, providerIdsInRegion, type Region } from '@watchly/shared';
 import { prisma } from '../lib/prisma.js';
 import { POSTER_BASE, detail, listPage, pickTrailers, sleep, type TmdbListItem } from '../lib/tmdb.js';
+import {
+  extractBackdrop,
+  extractCast,
+  extractCertifications,
+  extractRecommendations,
+} from '../lib/titleExtract.js';
 
 /**
  * TMDB provider_id -> our internal service id, per region. Must be per-region:
@@ -135,6 +141,7 @@ async function upsertTitle({ tmdbId, media, item }: Candidate): Promise<'cached'
   const data = {
     title: item.title ?? item.name ?? 'Untitled',
     posterUrl: item.poster_path ? `${POSTER_BASE}${item.poster_path}` : null,
+    backdropUrl: extractBackdrop(d),
     trailerYoutubeIds,
     genres: d.genres.map((g) => g.name),
     releaseYear: date ? Number(date.slice(0, 4)) : null,
@@ -144,6 +151,9 @@ async function upsertTitle({ tmdbId, media, item }: Candidate): Promise<'cached'
     // Kept for possible use on the results screen, where the decision is already made.
     overview: item.overview || null,
     language: item.original_language,
+    topCast: extractCast(d) as unknown as Prisma.InputJsonValue,
+    certifications: extractCertifications(d, media, REGIONS) as unknown as Prisma.InputJsonValue,
+    recommendations: extractRecommendations(d, media) as unknown as Prisma.InputJsonValue,
     watchProviders: watchProviders as unknown as Prisma.InputJsonValue,
     popularity: item.popularity,
     cachedAt: new Date(),
