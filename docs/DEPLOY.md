@@ -80,7 +80,7 @@ moment the product is trying to feel effortless.
 | Setting | Value |
 | --- | --- |
 | Service | [cron-job.org](https://cron-job.org) (free; supports hour restrictions) |
-| URL | `https://watchly-api.onrender.com/health` |
+| URL | `https://watchly-app-backend.onrender.com/health` |
 | Method | `GET` |
 | Interval | Every 10 minutes |
 | Hours | 16:00 – 01:00 IST only |
@@ -134,7 +134,7 @@ streaming provider are dropped — roughly half of what TMDB returns).
 **Nightly refresh** runs via `.github/workflows/sync-catalog.yml`, which POSTs to
 `/internal/sync-catalog`. Add two GitHub Actions secrets:
 
-- `API_URL` → `https://watchly-api.onrender.com` (no trailing slash)
+- `API_URL` → `https://watchly-app-backend.onrender.com` (no trailing slash)
 - `CRON_SECRET` → the same value you set on Render
 
 It's an external trigger rather than an in-process cron because Render's free
@@ -149,7 +149,7 @@ Verify it works without waiting for the schedule: run the workflow manually
 Set the production API in `apps/mobile/.env`:
 
 ```
-EXPO_PUBLIC_API_URL="https://watchly-0hvm.onrender.com"
+EXPO_PUBLIC_API_URL="https://watchly-app-backend.onrender.com"
 ```
 
 **`EXPO_PUBLIC_*` values are inlined into the bundle at build time, and Metro

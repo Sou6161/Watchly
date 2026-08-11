@@ -8,7 +8,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://watchly-0hvm.onrender.com",
+        "EXPO_PUBLIC_API_URL": "https://watchly-app-backend.onrender.com",
         "EXPO_PUBLIC_POSTHOG_KEY": "phc_ncyQWjhbuPaByraJPmj3R7pGHm7SX6FBBZbKJUp3mThA",
         "EXPO_PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com"
       },
@@ -19,7 +19,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://watchly-0hvm.onrender.com",
+        "EXPO_PUBLIC_API_URL": "https://watchly-app-backend.onrender.com",
         "EXPO_PUBLIC_POSTHOG_KEY": "phc_ncyQWjhbuPaByraJPmj3R7pGHm7SX6FBBZbKJUp3mThA",
         "EXPO_PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com"
       },
@@ -30,7 +30,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://watchly-0hvm.onrender.com",
+        "EXPO_PUBLIC_API_URL": "https://watchly-app-backend.onrender.com",
         "EXPO_PUBLIC_POSTHOG_KEY": "phc_ncyQWjhbuPaByraJPmj3R7pGHm7SX6FBBZbKJUp3mThA",
         "EXPO_PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com"
       }
