@@ -10,47 +10,16 @@ import {
 import { buildQueue, type QueueFilters } from './queue.js';
 import { env } from '../env.js';
 
-/**
- * Lazy, write-through catalog.
- *
- * Titles are fetched from TMDB on demand and cached in Postgres as we go, rather
- * than bulk-synced ahead of time. The cache still exists — and it still has to,
- * because Vote is foreign-keyed to Title, which is what makes "don't re-show a
- * title swiped in the last 30 days" one SQL clause and what makes past sessions
- * openable without re-hydrating fifteen titles from TMDB.
- *
- * What's lazy is *when* it fills: the first session on a cold cache pays a couple
- * of seconds fetching, every session after that is served from Postgres.
- *
- * The one thing TMDB genuinely cannot do for us is filter by "has a trailer" —
- * there's no such parameter on /discover, and roughly HALF of all titles don't
- * have one. So we over-fetch candidates and drop the trailerless ones here.
- */
-
 /** How many raw candidates to pull for each title we actually need. */
 const OVERFETCH = 2.5;
 
-/**
- * Parallel detail fetches. TMDB allows ~50 req/s; 20 in flight is well clear of
- * that and cuts the cold-start wait roughly in half versus 8, because the whole
- * cost here is round-trip latency, not our CPU.
- */
 const CONCURRENCY = 20;
 
 /** Give up after this many TMDB rounds rather than stall the user forever. */
 const MAX_ROUNDS = 3;
 
-/**
- * How long a cached title's streaming providers are trusted. Titles come and go
- * from Netflix constantly; a week-old provider list is fine, a month-old one will
- * start sending people to apps that no longer have the title.
- */
 const STALE_AFTER_DAYS = 7;
 
-/**
- * Cap on stale titles re-checked per request. Each is an individual UPDATE, and
- * one user's session must never turn into a catalogue-wide repair job.
- */
 const MAX_REFRESH_PER_REQUEST = 8;
 
 const providerIdsFor = (region: Region, services: string[]): number[] =>
@@ -58,8 +27,6 @@ const providerIdsFor = (region: Region, services: string[]): number[] =>
     providerIdsInRegion(s, region),
   );
 
-/** TMDB provider_id -> our service id, for this region. One service may own
- *  several provider ids (tiered services), so every one maps back to it. */
 function providerLookup(region: Region): Map<number, string> {
   const map = new Map<number, string>();
   for (const svc of STREAMING_SERVICES) {
@@ -68,43 +35,19 @@ function providerLookup(region: Region): Map<number, string> {
   return map;
 }
 
-/**
- * Returns a queue of `limit` titles, fetching from TMDB only if the cache can't
- * already satisfy the filters.
- */
 export async function ensureQueue(
   prisma: PrismaClient,
   filters: QueueFilters,
   excludeForUserIds: string[],
 ): Promise<Title[]> {
-  // No TMDB key: serve whatever is cached rather than throwing. Keeps the app
-  // degraded-but-working if the key goes missing in production, and keeps the test
-  // suite hermetic — tests seed their own fixtures and must never hit the network.
   if (!env.TMDB_API_KEY) {
     return buildQueue(prisma, filters, excludeForUserIds);
   }
 
-  /**
-   * ALWAYS ask TMDB what currently matches these filters — even when the cache
-   * looks full.
-   *
-   * The earlier version only called TMDB when the cache ran short, which meant a
-   * user with a warm cache would never see a film released last week: we had
-   * fifteen perfectly good cached titles, so we never asked. The catalogue would
-   * quietly rot, and "popular this week" would mean "popular whenever we last
-   * happened to be short".
-   *
-   * This is cheap. /discover is ONE request (~200ms) and returns the live ranking.
-   * The expensive part — a details call per title, to get the trailer — is only
-   * paid for titles we've never seen. A returning user typically pays for the two
-   * or three that are genuinely new since last time.
-   */
   await refreshFilterWindow(prisma, filters, 0);
 
   let queue = await buildQueue(prisma, filters, excludeForUserIds);
 
-  // Still short? Walk deeper into TMDB's pages. Happens on a cold cache, or when
-  // someone has swiped through most of what matches a narrow filter.
   for (let round = 1; round < MAX_ROUNDS && queue.length < filters.limit; round++) {
     const added = await refreshFilterWindow(prisma, filters, round);
     if (added === 0) break; // TMDB has nothing more for these filters.
@@ -114,23 +57,6 @@ export async function ensureQueue(
   return queue;
 }
 
-/**
- * Finds a title by its TMDB id, fetching and caching it if we've genuinely never
- * seen it before. Backs "more like this": TMDB's recommendations reference plenty
- * of titles nobody has ever swiped on, so there's often no local row yet — this is
- * what turns a tap into a real, permanent Title the details screen can open.
- *
- * Deliberately does NOT apply the swipe-deck's "must have a trailer and a local
- * provider" gate. That gate exists to keep dead cards out of a deck someone is
- * actively swiping; a details page for a recommendation is a different context —
- * showing "no trailer available" or hiding the play buttons is an honest, fine
- * outcome there (both already degrade gracefully), and dropping the title
- * entirely would make half of "more like this" silently unclickable.
- *
- * Returns null only if there's truly nothing to serve (no TMDB key configured, or
- * TMDB has no record of this id) — never throws, since a dead recommendation tap
- * should fail quietly, not crash the details screen the user is already on.
- */
 export async function getOrFetchTitle(
   prisma: PrismaClient,
   tmdbId: number,
@@ -146,28 +72,15 @@ export async function getOrFetchTitle(
   try {
     return await prisma.title.create({ data: row });
   } catch {
-    // Lost a create race against another request resolving the same tmdbId at
-    // the same moment (the unique constraint rejects the second insert) — the
-    // row now exists, so just read what won.
     return prisma.title.findUnique({ where: { tmdbId_type: { tmdbId, type } } });
   }
 }
 
-/**
- * A full TMDB fetch, shaped into everything a Title row needs — shared by
- * getOrFetchTitle (a CREATE, for a title never seen before) and
- * refreshIfIncomplete (an UPDATE, for a title cached before the details-screen
- * enrichment fields existed). Returns null rather than throwing whenever there's
- * nothing usable to write: no TMDB key configured, or TMDB 4xx'd/errored on this
- * id — both callers treat that as "leave whatever's already there alone."
- */
 async function buildFullRow(
   tmdbId: number,
   type: 'MOVIE' | 'TV',
   region: Region,
 ): Promise<Prisma.TitleCreateInput | null> {
-  // No key: nothing we can fetch. Matches ensureQueue's degrade-gracefully rule,
-  // and keeps this reachable from tests without a network dependency.
   if (!env.TMDB_API_KEY) return null;
 
   const media = type === 'MOVIE' ? 'movie' : 'tv';
@@ -205,19 +118,6 @@ async function buildFullRow(
   };
 }
 
-/**
- * Self-heals a title's record when it looks like it predates the details-screen
- * enrichment (backdrop/cast/recommendations all still empty) or has simply gone
- * stale. This is what makes opening ANY title's details page — one cached last
- * night or eight months ago — fill in the new fields on the very next view,
- * rather than waiting on the lazy queue refresh (which only touches titles
- * someone is actively being dealt, capped at 8 a request) or the next nightly
- * sync.
- *
- * Silent no-op if TMDB is unreachable or unconfigured, or the row already looks
- * complete and fresh — a details page that already has a poster and an overview
- * to show must never block or blank out over a background enrichment attempt.
- */
 export async function refreshIfIncomplete(
   prisma: PrismaClient,
   title: Title,
@@ -237,17 +137,6 @@ export async function refreshIfIncomplete(
   return prisma.title.update({ where: { id: title.id }, data: row });
 }
 
-/**
- * Asks TMDB what currently matches these exact filters, and makes sure Postgres
- * knows about all of it.
- *
- * The /discover query IS the user's filter, translated: their region, their
- * services' TMDB provider ids, their mood's genre ids, their runtime cap. So the
- * result is the live, current ranking for what they asked for — not a snapshot
- * from whenever a cron last ran.
- *
- * Returns how many titles were newly cached.
- */
 async function refreshFilterWindow(
   prisma: PrismaClient,
   filters: QueueFilters,
@@ -261,8 +150,6 @@ async function refreshFilterWindow(
 
   const lookup = providerLookup(region);
 
-  // ONE media type — the user picked movie night or series night, so fetching the
-  // other would burn TMDB calls on titles that can never enter the queue.
   const media = [titleType === 'MOVIE' ? 'movie' : 'tv'] as const;
   // Enough candidates to survive the ~50% trailer cull, at 20 results per page.
   const pages = Math.max(1, Math.ceil((limit * OVERFETCH) / 20));
@@ -275,8 +162,6 @@ async function refreshFilterWindow(
     for (let p = 0; p < pages; p++) {
       const page = round * pages + p + 1;
 
-      // The release-date param is named differently per media type, so pick the
-      // right key. Fetch from Jan 1 of the floor year.
       const dateKey = m === 'movie' ? 'primary_release_date.gte' : 'first_air_date.gte';
 
       const res = await discover(m, {
@@ -290,8 +175,6 @@ async function refreshFilterWindow(
         ...(genreIds.length > 0 && { with_genres: genreIds.join('|') }),
         // TMDB's runtime filter is movies-only; TV is filtered in SQL afterwards.
         ...(maxRuntime !== null && m === 'movie' && { 'with_runtime.lte': String(maxRuntime) }),
-        // Fetch the same window the SQL will filter on, so we don't waste the
-        // details-fetch budget caching titles the queue would immediately drop.
         ...(minYear !== null && { [dateKey]: `${minYear}-01-01` }),
         ...(minRating !== null && { 'vote_average.gte': String(minRating) }),
         ...(language !== null && { with_original_language: language }),
@@ -324,16 +207,6 @@ async function refreshFilterWindow(
 
   const unseen = candidates.filter((c) => !known.has(key(c)));
 
-  /**
-   * Titles we already have, but cached long enough ago that their streaming
-   * providers may have moved. A title that left Netflix last month would otherwise
-   * sit in the cache advertising Netflix forever, and the results screen would
-   * send someone to an app that no longer has it — the exact failure the spec calls
-   * the punchline.
-   *
-   * Capped per request so a big stale window can't turn one session into a
-   * thirty-second refresh.
-   */
   const staleCutoff = new Date(Date.now() - STALE_AFTER_DAYS * 24 * 60 * 60 * 1000);
   const stale = candidates
     .filter((c) => {
@@ -342,13 +215,6 @@ async function refreshFilterWindow(
     })
     .slice(0, MAX_REFRESH_PER_REQUEST);
 
-  /**
-   * Fetch details in parallel, then write ONCE.
-   *
-   * The first cut did a prisma.upsert() per title, and each is a separate round
-   * trip to Neon — ~100ms apiece from Singapore, so 30 titles burned 3 seconds of
-   * pure latency before TMDB was even counted. createMany collapses that to one.
-   */
   const rows: Prisma.TitleCreateManyInput[] = [];
   const refreshed: Prisma.TitleCreateManyInput[] = [];
 
@@ -369,15 +235,11 @@ async function refreshFilterWindow(
 
   await Promise.all([fetchRows(unseen, rows), fetchRows(stale, refreshed)]);
 
-  // skipDuplicates: two sessions can start at once and race on the same title.
-  // Losing that race must not fail the request.
   const created =
     rows.length > 0
       ? (await prisma.title.createMany({ data: rows, skipDuplicates: true })).count
       : 0;
 
-  // Stale rows need a real update, so these are individual writes — which is why
-  // they're capped.
   await Promise.all(
     refreshed.map((r) =>
       prisma.title.update({
@@ -403,13 +265,6 @@ interface TmdbItem {
   overview: string;
 }
 
-/**
- * Fetches one title's details and shapes it for insertion. Returns null if it has
- * no trailer, or doesn't stream on anything we care about — those are dropped, not
- * cached, because a card you can't play a trailer for is a dead card.
- *
- * Does no database work: the caller writes the whole batch in one go.
- */
 async function buildTitleRow(
   tmdbId: number,
   media: 'movie' | 'tv',
@@ -419,8 +274,6 @@ async function buildTitleRow(
 ): Promise<Prisma.TitleCreateManyInput | null> {
   const d = await detail(media, tmdbId);
 
-  // No trailer, no card. This is the filter TMDB can't do for us, and it drops
-  // roughly half of everything — which is exactly why we over-fetch.
   const trailerYoutubeIds = pickTrailers(d.videos?.results ?? []);
   if (trailerYoutubeIds.length === 0) return null;
 
@@ -455,13 +308,6 @@ async function buildTitleRow(
 
 type ProviderMap = Partial<Record<Region, { flatrate: string[] }>>;
 
-/**
- * Reduces TMDB's per-region provider block to the services we support, as our own
- * ids, so the queue's jsonb filter can compare directly against User.services.
- *
- * Only flatrate/free/ads count as streamable — a title you'd have to rent for ₹149
- * is not something to surface as "you both have this".
- */
 function mapProviders(
   d: Awaited<ReturnType<typeof detail>>,
   lookup: Map<number, string>,
@@ -480,12 +326,6 @@ function mapProviders(
   return services.length > 0 ? { [region]: { flatrate: services } } : {};
 }
 
-/**
- * Mood genres are stored as NAMES (Comedy, Horror) because movie and TV use
- * different numeric ids for the same genre — names are the only thing that joins
- * across both. TMDB's /discover wants ids, so translate here. The list changes
- * about never, so it's fetched once per process.
- */
 const genreCache = new Map<'movie' | 'tv', Map<string, number>>();
 
 async function resolveGenreIds(media: 'movie' | 'tv', names: string[]): Promise<number[]> {

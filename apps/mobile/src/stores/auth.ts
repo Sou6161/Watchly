@@ -67,8 +67,6 @@ export const useAuthStore = create<AuthStore>((set) => ({
       // session must go — the user asked to sign out.
     }
     await clearTokens();
-    // Without this the next person to sign in on this phone inherits the previous
-    // user's identity and their events merge together.
     resetAnalytics();
     set({ user: null });
   },
@@ -79,13 +77,6 @@ export const useAuthStore = create<AuthStore>((set) => ({
     return updated;
   },
 
-  /**
-   * Permanently deletes the account. Required by App Store Guideline 5.1.1(v) for
-   * any app that offers signup.
-   *
-   * Deliberately does NOT swallow errors the way logout does: a wrong password
-   * must surface, or the user is left thinking their data is gone when it isn't.
-   */
   deleteAccount: async (password) => {
     await api<void>('/api/me', { method: 'DELETE', body: { password } });
     await clearTokens();
@@ -94,14 +85,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 }));
 
-/**
- * A failed refresh anywhere in the app drops us back to signed-out. Registered at
- * module scope rather than in a hook: a 401 can surface from any screen, and the
- * api module can't import this store without a cycle.
- */
 setSessionExpiredHandler(() => useAuthStore.setState({ user: null }));
 
-/* Selectors. Subscribing to one field means a screen that only reads `user`
-   doesn't re-render when `loading` flips, which matters on the swipe screen. */
 export const useUser = () => useAuthStore((s) => s.user);
 export const useAuthLoading = () => useAuthStore((s) => s.loading);

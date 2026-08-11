@@ -16,15 +16,8 @@ import { AnimatedSplash } from '../src/components/AnimatedSplash';
 import { initAnalytics } from '../src/lib/analytics';
 import { colors } from '../src/theme';
 
-// Keep the native splash up until the tree paints — the animated splash takes
-// over from there, so the hand-off is seamless and never flashes a blank frame.
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-/**
- * Sends the user wherever their auth state says they belong, and — critically —
- * *away* from anywhere they don't. Redirecting only on sign-in would let a
- * signed-out user linger on /home after their refresh token expires.
- */
 function useProtectedRoute() {
   const user = useUser();
   const loading = useAuthLoading();
@@ -65,17 +58,6 @@ function RootNavigator() {
 
   useProtectedRoute();
 
-  // The Stack is ALWAYS mounted — never swapped out for a loading view. Returning
-  // a spinner here instead would leave the navigator unmounted, and expo-router
-  // silently discards any router.replace() issued before it mounts. That made the
-  // redirect off the index route a no-op and left the app sitting on a blank
-  // screen with nothing logged. The loading state belongs on the index route
-  // (which renders a spinner), not in place of the navigator.
-  // Override expo-router's DEFAULT navigation theme, which follows the system
-  // colour scheme and so paints a WHITE card/container behind every screen. During
-  // a transition (and the back gesture) that white flashed through for a frame
-  // before our dark Screen painted. Handing the navigator a dark theme means the
-  // container is already our colour — no seam, in either direction.
   return (
     <ThemeProvider value={navTheme}>
       <Stack
@@ -108,23 +90,12 @@ export default function RootLayout() {
 
   const [splashDone, setSplashDone] = useState(false);
 
-  // Fonts drive readiness: mounting the tree in a fallback font would reflow the
-  // moment DM Serif lands. fontError still lets us through — shipping in a system
-  // font beats a permanently blank screen.
   const ready = fontsLoaded || fontError;
 
-  // Hide the NATIVE splash the moment we're ready to render — not from an
-  // onLayout callback. onLayout depends on a native view event actually firing,
-  // which is exactly the kind of thing that can silently never happen (especially
-  // under Expo Go's own splash handling) and leaves the app stuck behind the
-  // native splash forever. A plain effect keyed on `ready` is the documented,
-  // reliable way to do this.
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => {});
   }, [ready]);
 
-  // Return null, not a spinner: the native splash is still covering the screen, so
-  // there's nothing to see behind it and nothing to flash.
   if (!ready) return null;
 
   return (

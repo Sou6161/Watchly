@@ -29,16 +29,8 @@ export default function Swipe() {
   const abandoned = useSessionStore((s) => s.abandoned);
   const reset = useSessionStore((s) => s.reset);
 
-  /**
-   * Drag progress of the top card, 0..1. Owned here rather than in the card so it
-   * survives the card being unmounted mid-throw, and so the card underneath can
-   * read the card above's gesture.
-   */
   const deckProgress = useSharedValue(0);
 
-  // A new card is on top now — put the deck back to its resting depth. Without
-  // this the incoming back card would start already scaled up, and the stack
-  // would visibly flatten after the first swipe.
   useEffect(() => {
     deckProgress.value = 0;
   }, [index, deckProgress]);
@@ -52,8 +44,6 @@ export default function Swipe() {
     if (phase === 'DONE') router.replace('/session/results');
   }, [phase, router]);
 
-  // Async: person A finished their deck. Hand off to the share screen with the
-  // code so person B can pick it up whenever.
   useEffect(() => {
     if (phase === 'ASYNC_DONE' && session) {
       const partner = voter === 'PERSON_B' ? session.personALabel : session.personBLabel;
@@ -63,8 +53,6 @@ export default function Swipe() {
     }
   }, [phase, session, voter, router]);
 
-  // The server gave up on this session (30 minutes idle). Say so plainly rather
-  // than letting them keep swiping into votes that will be rejected.
   useEffect(() => {
     if (!abandoned) return;
     Alert.alert('Session timed out', 'Nobody swiped for a while, so we closed it.', [
@@ -144,11 +132,6 @@ export default function Swipe() {
   );
 }
 
-/**
- * Multi-device: you've finished your fifteen, they haven't. The server decides
- * when the session is over (it emits session:completed once both are done), so
- * this screen just waits — there is nothing for the client to poll or decide.
- */
 function WaitingForPartner() {
   const session = useSessionStore((s) => s.session);
   const progress = useSessionStore((s) => s.progress);
@@ -191,11 +174,6 @@ function WaitingForPartner() {
   );
 }
 
-/**
- * The phone-passing moment. The spec is explicit that this is a *moment*, not a
- * screen change — so it gets a held beat, a haptic thump, and a name, and it
- * refuses to advance until the new person actually taps.
- */
 function Handoff({ name, onReady }: { name: string; onReady: () => void }) {
   const scale = useSharedValue(0.9);
   const lift = useSharedValue(20);

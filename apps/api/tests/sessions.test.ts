@@ -47,9 +47,6 @@ describe('sessions', () => {
 
     const { session, titles } = await createSession(a.accessToken);
 
-    // Re-fetching must give the SAME titles in the SAME order. If the queue were
-    // rebuilt per request it would reshuffle (it's randomised) and the two people
-    // would silently be swiping different decks.
     const again = await request(app)
       .get(`/api/sessions/${session.id}`)
       .set(auth(a.accessToken))
@@ -64,8 +61,6 @@ describe('sessions', () => {
 
     const { titles } = await createSession(a.accessToken);
 
-    // Spec: no spoilers in card metadata. The surest way to honour that is to
-    // never ship the field at all.
     for (const t of titles) expect(t).not.toHaveProperty('overview');
   });
 
@@ -110,8 +105,6 @@ describe('sessions', () => {
       .set(auth(a.accessToken))
       .expect(200);
 
-    // The promise on the results screen is "you both said YES". Quietly widening
-    // it to MAYBE would erode trust in the one number the product exists to show.
     expect(res.body.matches).toHaveLength(0);
   });
 
@@ -255,8 +248,6 @@ describe('sessions', () => {
       .set(auth(a.accessToken))
       .expect(200);
 
-    // Leaving completion to the client would mean an app dying on the final swipe
-    // strands both people's votes forever.
     expect(res.body.session.status).toBe('COMPLETED');
 
     // And a closed session takes no more votes.

@@ -21,8 +21,6 @@ import { colors, radii, spacing, type } from '../theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
-/** Spelled out rather than using StyleSheet.absoluteFillObject, whose typing has
- *  come and gone across RN versions. */
 const FILL = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 } as const;
 
 const CARD_W = SCREEN_W - spacing.lg * 2;
@@ -44,14 +42,6 @@ interface Props {
   title: PublicTitle;
   onDecide: (decision: Decision) => void;
   isTop: boolean;
-  /**
-   * 0..1 — how far the TOP card has been dragged toward a decision.
-   *
-   * Written by the top card, read by the one underneath so it rises to meet the
-   * user as the top card leaves. Shared rather than local state because it updates
-   * every frame on the UI thread; routing it through React would drop frames in
-   * the one interaction that cannot afford to.
-   */
   deckProgress: SharedValue<number>;
 }
 
@@ -62,19 +52,8 @@ export function SwipeCard({ title, onDecide, isTop, deckProgress }: Props) {
   /** Latches so the threshold tick fires once per crossing, not every frame. */
   const armed = useSharedValue(false);
 
-  /**
-   * Tap to play. The poster is the resting state and stays untouched until the
-   * user asks for the trailer, so the card reads as art first.
-   *
-   * (This overrides the "trailers autoplay with sound, no tap-to-play" rule in
-   * the original spec — autoplay was a deliberate product decision that got
-   * reversed after seeing it on device, where the snap from poster to video felt
-   * jumpy. Deliberate reversal, not an oversight.)
-   */
   const [trailerOpen, setTrailerOpen] = useState(false);
 
-  // Close the trailer if this card stops being the top one — a modal belonging to
-  // a card that has already been swiped away would be stranded on screen.
   useEffect(() => {
     if (!isTop) setTrailerOpen(false);
   }, [isTop]);
@@ -90,14 +69,6 @@ export function SwipeCard({ title, onDecide, isTop, deckProgress }: Props) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  /**
-   * Each decision gets its own feel, because they are not the same kind of act.
-   *
-   * YES is the one worth celebrating. NO is a rejection. But SEEN and MAYBE are
-   * neither — they're neutral bookkeeping, and firing the system Warning pattern
-   * at someone for "seen it" makes an ordinary action feel like a mistake. They
-   * get a plain tap instead.
-   */
   const commit = (decision: Decision) => {
     if (decision === 'YES') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -132,14 +103,6 @@ export function SwipeCard({ title, onDecide, isTop, deckProgress }: Props) {
       // Feed the card underneath, so it rises as this one is pulled away.
       deckProgress.value = Math.min(travel / SWIPE_THRESHOLD, 1);
 
-      /**
-       * A tick at the moment the swipe becomes committal.
-       *
-       * Without it the threshold is invisible: you let go and find out afterwards
-       * whether it counted. With it your thumb knows, which is most of what makes
-       * a swipe feel confident rather than hopeful. Latched so it fires once per
-       * crossing — firing every frame past the line would buzz continuously.
-       */
       const past = travel > SWIPE_THRESHOLD;
       if (past && !armed.value) {
         armed.value = true;
@@ -154,8 +117,6 @@ export function SwipeCard({ title, onDecide, isTop, deckProgress }: Props) {
       const fastX = Math.abs(e.velocityX) > VELOCITY_THRESHOLD;
       const fastY = Math.abs(e.velocityY) > VELOCITY_THRESHOLD;
 
-      // Horizontal wins ties: left/right are the two decisions people actually
-      // make, and a sloppy diagonal should read as the one they meant.
       if (Math.abs(x.value) > SWIPE_THRESHOLD || fastX) {
         const right = x.value > 0 || e.velocityX > 0;
         fly(right ? 'YES' : 'NO', right ? SCREEN_W * 1.5 : -SCREEN_W * 1.5, y.value);
@@ -168,8 +129,6 @@ export function SwipeCard({ title, onDecide, isTop, deckProgress }: Props) {
         return;
       }
 
-      // Didn't clear the bar — spring home, and let the card underneath settle
-      // back down with it.
       x.value = withSpring(0, SPRING);
       y.value = withSpring(0, SPRING);
       deckProgress.value = withSpring(0, SPRING);
@@ -185,15 +144,8 @@ export function SwipeCard({ title, onDecide, isTop, deckProgress }: Props) {
       if (success) runOnJS(openTrailer)();
     });
 
-  // Exclusive, with pan first: if the finger moves, it's a swipe and the tap is
-  // abandoned. Racing them would let a fast flick also toggle the trailer.
   const gesture = Gesture.Exclusive(pan, tap);
 
-  /**
-   * The card underneath. Sits smaller and lower, and rises to full size as the top
-   * card is dragged away — so the deck reads as a stack with depth rather than a
-   * single card that teleports to the next title.
-   */
   const backStyle = useAnimatedStyle(() => ({
     transform: [
       { scale: BACK_SCALE + (1 - BACK_SCALE) * deckProgress.value },
@@ -204,8 +156,6 @@ export function SwipeCard({ title, onDecide, isTop, deckProgress }: Props) {
   const cardStyle = useAnimatedStyle(() => {
     // Tilt scales with horizontal travel, capped so it never looks unhinged.
     const rotate = interpolate(x.value, [-SCREEN_W, 0, SCREEN_W], [-14, 0, 14]);
-    // Fade only near the very end of the throw, so the card stays legible while
-    // the user is still deciding.
     const opacity = interpolate(
       Math.max(Math.abs(x.value), Math.abs(y.value)),
       [0, SCREEN_W * 0.7, SCREEN_W],
@@ -293,15 +243,9 @@ function facts(t: PublicTitle): string {
   return bits.join('  ·  ');
 }
 
-/**
- * The four decision labels, each fading in as the card moves its way. Rendered
- * inside the card so they tilt with it.
- */
 function DecisionLabels({ x, y }: { x: SharedValue<number>; y: SharedValue<number> }) {
   const at = (sv: SharedValue<number>, dir: 1 | -1, axis: SharedValue<number>) =>
     useAnimatedStyle(() => {
-      // A label only shows while its own axis is the dominant one, so a diagonal
-      // drag doesn't light up two contradictory verdicts at once.
       const dominant = Math.abs(sv.value) >= Math.abs(axis.value);
       const progress = interpolate(sv.value * dir, [20, SWIPE_THRESHOLD], [0, 1], 'clamp');
       return { opacity: dominant ? progress : 0 };
@@ -346,7 +290,6 @@ const s = StyleSheet.create({
   },
   poster: { ...FILL, width: CARD_W, height: CARD_H },
   posterEmpty: { backgroundColor: colors.purple },
-
 
   scrim: { ...FILL },
 

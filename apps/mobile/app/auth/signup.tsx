@@ -35,9 +35,6 @@ export default function Signup() {
     }
   };
 
-  // Same rule the server enforces, run locally so a weak password shows up while
-  // typing rather than after a round trip. The server check is the real control;
-  // this is only courtesy.
   const pwCheck = checkPassword(password, email.trim());
   const showPwProblem = password.length > 0 && !pwCheck.ok;
 

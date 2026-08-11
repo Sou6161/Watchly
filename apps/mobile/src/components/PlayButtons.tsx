@@ -6,11 +6,6 @@ import { track } from '../lib/analytics';
 import type { PublicTitle } from '../lib/types';
 import { colors, radii, spacing, type } from '../theme';
 
-/**
- * The "Play on X" buttons — the punchline of the whole app, so it lives in one
- * place. Shows only the services this title actually streams on in the given
- * region.
- */
 export function PlayButtons({ title, region }: { title: PublicTitle; region: Region }) {
   const services = (title.watchProviders[region]?.flatrate ?? [])
     .map(serviceById)

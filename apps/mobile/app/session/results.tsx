@@ -55,10 +55,6 @@ export default function Results() {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
       } catch {
-        // Distinct from "no matches". Collapsing a failed request into an empty
-        // list would tell two people they agreed on nothing when in fact we just
-        // couldn't reach the server — the one screen where a lie is unforgivable,
-        // because they have no way to know it's wrong.
         if (!cancelled) setFailed(true);
       }
     })();
@@ -109,8 +105,6 @@ export default function Results() {
     const myLabel = voter === 'PERSON_B' ? session.personBLabel : session.personALabel;
     const partnerLabel = voter === 'PERSON_B' ? session.personALabel : session.personBLabel;
 
-    // A zero-match night doesn't have to be a dead end. If one of you liked
-    // something, offer it as a tiebreaker rather than sending them away empty.
     if (nearMisses.length > 0) {
       return (
         <Screen>
@@ -204,12 +198,6 @@ export default function Results() {
   );
 }
 
-/**
- * "Save partner" — offered only when there IS a partner to save: a multi-device
- * session has a real account on the other end, a same-device one has only a name
- * someone typed on this phone. Hidden entirely if they're already saved, rather
- * than showing a dead button.
- */
 function SavePartner({
   partnerUserId,
   partnerLabel,
@@ -270,8 +258,6 @@ function titleFacts(title: PublicTitle): string {
     .join('  ·  ');
 }
 
-/** The "Play on X" buttons, shared by matches and near-misses — the punchline of
- *  the whole app, so it lives in exactly one place. */
 function ServiceButtons({ title, region }: { title: PublicTitle; region: Region }) {
   const services = (title.watchProviders[region]?.flatrate ?? [])
     .map(serviceById)
@@ -285,8 +271,6 @@ function ServiceButtons({ title, region }: { title: PublicTitle; region: Region 
           accessibilityRole="button"
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            // If matches happen but this stays flat, the product isn't landing —
-            // people are agreeing and then not watching.
             track.serviceOpened({ service: svc.id, titleType: title.type });
             openInService(svc.id, title.title);
           }}
@@ -336,11 +320,6 @@ function MatchCard({ title, region }: { title: PublicTitle; region: Region }) {
   );
 }
 
-/**
- * A near-miss: something one person liked and the other didn't. The label makes
- * clear whose pick it is, so the tiebreaker feels like an honest negotiation
- * ("you liked this, they were on the fence") rather than a second set of matches.
- */
 function NearMissCard({
   nearMiss,
   region,
@@ -357,8 +336,6 @@ function NearMissCard({
   const { title, likedBy, otherDecision } = nearMiss;
   const mineIsTheYes = voter !== null && likedBy === voter;
 
-  // "You liked it" reads better than "<your name> liked it"; the partner keeps
-  // their name. Same-device (voter null) has no "me", so name both sides.
   const liker = mineIsTheYes ? 'You' : partnerLabel;
   const otherName = mineIsTheYes ? partnerLabel : voter === null ? myLabel : 'you';
   const reaction =
@@ -410,9 +387,6 @@ const s = StyleSheet.create({
   emptyCopy: { ...type.body, color: colors.textMuted, marginTop: spacing.md },
 
   match: {
-    // OPAQUE, not translucent. Android draws the elevation shadow against the
-    // view's backing rect, so a see-through background (rgba white 0.06) leaked a
-    // pale ghost box out past the rounded corners. A solid surface fixes it.
     backgroundColor: '#241640',
     borderRadius: radii.card,
     borderWidth: 1,
@@ -431,15 +405,11 @@ const s = StyleSheet.create({
   cardPressed: { opacity: 0.8 },
   poster: {
     width: 84,
-    // 2:3 is the poster aspect TMDB actually ships; 92x138 was close but off, so
-    // art came out subtly squashed.
     height: 126,
     borderRadius: radii.sm,
     backgroundColor: colors.purple,
   },
   posterEmpty: { opacity: 0.5 },
-  // minWidth:0 lets the text column actually shrink. Without it a long unbroken
-  // title pushes the row wider than the card and overflows the right edge.
   matchBody: { flex: 1, minWidth: 0, justifyContent: 'center' },
   matchTitle: { ...type.title, fontSize: 19, lineHeight: 25, color: colors.text },
   matchFacts: { ...type.caption, color: colors.textFaint, marginTop: spacing.xs },

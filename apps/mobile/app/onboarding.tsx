@@ -20,8 +20,6 @@ export default function Onboarding() {
 
   const changeRegion = (next: Region) => {
     setRegion(next);
-    // Zee5 doesn't exist in the US. Keeping it selected across a region switch
-    // would send the server services it will reject, so drop the strays.
     const allowed = new Set(servicesForRegion(next).map((s) => s.id));
     setSelected((prev) => prev.filter((id) => allowed.has(id)));
   };
@@ -34,8 +32,6 @@ export default function Onboarding() {
     setBusy(true);
     setError('');
     try {
-      // `onboarded` flips to true server-side the moment services is non-empty,
-      // which is what lets useProtectedRoute forward us to /home.
       await updateMe({ region, services: selected });
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not save. Try again.');

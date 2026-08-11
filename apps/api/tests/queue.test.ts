@@ -64,8 +64,6 @@ describe('title queue', () => {
       .set(auth(a.accessToken))
       .expect(200);
 
-    // A title of unknown length must not be offered under "Under 100 min" — a
-    // possible 3-hour epic there breaks trust in the filter.
     for (const t of res.body.titles) {
       expect(t.runtime).not.toBeNull();
       expect(t.runtime).toBeLessThanOrEqual(100);
@@ -193,8 +191,6 @@ describe('title queue', () => {
       return q.filter((t) => t.genres.includes('Comedy')).length;
     };
 
-    // Compare biased vs unbiased over several draws — a relative check is far less
-    // flaky than pinning an absolute fraction of a randomised shuffle.
     const TRIALS = 25;
     let biased = 0;
     let plain = 0;
@@ -206,8 +202,6 @@ describe('title queue', () => {
     const biasedAvg = biased / TRIALS;
     const plainAvg = plain / TRIALS;
 
-    // Unbiased sits around 5 of 10; the taste weight pulls comedy clearly higher —
-    // but horror still shows up, so it's a bias, not a filter.
     expect(plainAvg).toBeGreaterThan(3);
     expect(plainAvg).toBeLessThan(7);
     expect(biasedAvg).toBeGreaterThan(plainAvg + 1);
@@ -257,10 +251,6 @@ describe('title queue', () => {
 
   it('serves an unenriched title gracefully when there is no TMDB key to self-heal it with', async () => {
     const a = await signUp('a@example.com', 'A');
-    // seedTitles never sets backdropUrl/topCast/recommendations, so this row
-    // looks exactly like a pre-enrichment cached title — the self-heal attempt
-    // in GET /:id should try, fail silently (blank key in tests), and still
-    // serve everything that WAS already cached rather than erroring.
     const [t] = await seedTitles(1);
 
     const res = await request(app).get(`/api/titles/${t!.id}`).set(auth(a.accessToken)).expect(200);
@@ -275,8 +265,6 @@ describe('title queue', () => {
     const a = await signUp('a@example.com', 'A');
     const [t] = await seedTitles(1);
 
-    // The test env's TMDB_API_KEY is blank — if this reached the network path
-    // it would throw, so a 200 here proves the "already cached" branch was taken.
     const res = await request(app)
       .post('/api/titles/resolve')
       .set(auth(a.accessToken))

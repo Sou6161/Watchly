@@ -11,11 +11,6 @@ import { api } from '../src/lib/api';
 import type { TasteProfile } from '../src/lib/types';
 import { bgGradient, colors, radii, spacing, type } from '../src/theme';
 
-/**
- * The shareable "sync card" — a branded image of how in sync you two are, for
- * WhatsApp/Instagram. Every share is a tiny ad that shows off the couple angle,
- * so it's the app's cheapest growth loop: no infra, just a pretty picture.
- */
 export default function ShareTaste() {
   const router = useRouter();
   const user = useUser();

@@ -3,13 +3,6 @@ import request from 'supertest';
 import { app, auth, seedTitles, signUp } from './helpers.js';
 import { prisma } from '../src/lib/prisma.js';
 
-/**
- * Account deletion is required by App Store Guideline 5.1.1(v) — an app that lets
- * you create an account must let you delete it in-app, or it gets rejected.
- *
- * The interesting part isn't that the row disappears; it's what happens to the
- * OTHER person's data.
- */
 describe('account deletion', () => {
   it('requires the correct password', async () => {
     const a = await signUp('a@example.com', 'A');
@@ -33,8 +26,6 @@ describe('account deletion', () => {
       .send({ password: 'couch-potato-9' })
       .expect(204);
 
-    // The access token is still validly signed, but the account is gone — the
-    // auth middleware must reject it rather than 500 on a missing user.
     await request(app).get('/api/me').set(auth(a.accessToken)).expect(401);
 
     // And the refresh token can't resurrect it.
@@ -71,10 +62,6 @@ describe('account deletion', () => {
     expect(await prisma.vote.count({ where: { sessionId } })).toBe(0);
   });
 
-  /**
-   * The case worth getting right: a shared multi-device session belongs to BOTH
-   * people. Person B leaving must not erase person A's memory of that night.
-   */
   it("does not destroy the partner's history when person B leaves", async () => {
     const a = await signUp('a@example.com', 'Alice');
     const b = await signUp('b@example.com', 'Bob');
@@ -105,8 +92,6 @@ describe('account deletion', () => {
       .set(auth(a.accessToken))
       .expect(200);
 
-    // Bob's NAME survives as plain text, so Alice's history doesn't read
-    // "null's matches" — but his account link is gone.
     expect(still.body.session.personBLabel).toBe('Bob');
     const row = await prisma.session.findUnique({ where: { id: sessionId } });
     expect(row?.personBId).toBeNull();

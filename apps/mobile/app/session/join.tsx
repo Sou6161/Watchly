@@ -23,8 +23,6 @@ export default function Join() {
   const [scanning, setScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
 
-  // Guards against the camera firing onBarcodeScanned dozens of times a second
-  // while the join request is still in flight.
   const handled = useRef(false);
   const inputRef = useRef<TextInput | null>(null);
 

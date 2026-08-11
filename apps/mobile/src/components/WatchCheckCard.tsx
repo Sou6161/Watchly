@@ -7,12 +7,6 @@ import { track } from '../lib/analytics';
 import type { PublicTitle, WatchCheck } from '../lib/types';
 import { colors, radii, spacing, type } from '../theme';
 
-/**
- * The morning-after prompt. Closing the loop is the whole point: a swipe says what
- * two people *wanted*, but "we actually watched this" is the only signal that the
- * app did its job — and it's far stronger evidence for the taste profile than any
- * number of yeses. One tap to answer, then it's gone for good.
- */
 export function WatchCheckCard({
   check,
   onAnswered,
@@ -36,8 +30,6 @@ export function WatchCheckCard({
       // Non-fatal: the prompt reappears next launch if this didn't land. Better a
       // second ask than a silently-lost answer.
     } finally {
-      // Dismiss regardless — the session is optimistically answered, and re-asking
-      // on failure is the acceptable failure mode.
       onAnswered();
     }
   };

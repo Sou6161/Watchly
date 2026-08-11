@@ -1,16 +1,5 @@
 import { prisma } from './prisma.js';
 
-/**
- * The genres a user says YES to most, for one media type.
- *
- * This is the app's memory of your taste. Two callers lean on it: "Surprise us"
- * uses it as a hard filter (one confident pick), and the session queue uses it as
- * a soft weight (bias fifteen cards toward what you like without killing variety).
- *
- * Only the account holder's OWN votes count — in a same-device night this one
- * account also casts the guest's votes, and those aren't the owner's taste. Movie
- * and TV genres are different vocabularies, so we never mix them.
- */
 export async function lovedGenres(
   userId: string,
   titleType: 'MOVIE' | 'TV',

@@ -7,13 +7,6 @@ import type {
   Voter,
 } from '@watchly/shared';
 
-/**
- * Wire shapes returned by the API. These mirror toPublicTitle/toPublicSession on
- * the server — they live here rather than in @watchly/shared because they're
- * response DTOs derived from Prisma models, and the shared package deliberately
- * has no Prisma dependency.
- */
-
 /** Per-region streaming availability, keyed by our internal service ids. */
 export type WatchProviders = Partial<Record<Region, { flatrate: string[] }>>;
 
@@ -23,8 +16,6 @@ export interface PublicTitle {
   type: TitleType;
   title: string;
   posterUrl: string | null;
-  // Ranked, official-first — the card plays [0]; the modal offers a picker
-  // when there's more than one.
   trailerYoutubeIds: string[];
   genres: string[];
   releaseYear: number | null;
@@ -40,8 +31,6 @@ export interface CastMember {
   profileUrl: string | null;
 }
 
-/** A "more like this" recommendation — not a full title, just enough to render a
- *  thumbnail. Tapping one resolves it into a real title via /api/titles/resolve. */
 export interface TitleRecommendation {
   tmdbId: number;
   type: TitleType;
@@ -49,12 +38,6 @@ export interface TitleRecommendation {
   posterUrl: string | null;
 }
 
-/**
- * The details-screen payload — everything a card has, plus the plot, the
- * original-language code, and the enrichment fields. The only place in the app
- * `overview` ever appears; every card/list endpoint deliberately omits it to
- * avoid spoiling the swipe.
- */
 export interface TitleDetail extends PublicTitle {
   overview: string | null;
   language: string | null;

@@ -13,11 +13,6 @@ const PAGE = 10;
 type KindFilter = 'ALL' | 'MOVIE' | 'TV';
 type ModeFilter = 'ALL' | 'SAME_DEVICE' | 'MULTI_DEVICE';
 
-/**
- * The full history, on its own screen so it never piles up on home. Paginated
- * ("Load more") and filterable by kind and how you played, so finding a
- * particular night is a couple of taps rather than an endless scroll.
- */
 export default function Nights() {
   const router = useRouter();
 

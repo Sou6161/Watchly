@@ -1,14 +1,6 @@
 import { REGIONS, STREAMING_SERVICES, providerIdsInRegion } from '@watchly/shared';
 import { providersInRegion } from '../lib/tmdb.js';
 
-/**
- * Verifies the tmdbProviderId we hard-coded for each service against what TMDB
- * actually reports per region. Getting one of these wrong doesn't throw — it
- * just silently makes that service match zero titles forever, so it's worth
- * checking explicitly rather than discovering it as "why is Hotstar empty?".
- *
- *   npm run tmdb:providers -w @watchly/api
- */
 async function main() {
   for (const region of REGIONS) {
     const [movies, tv] = await Promise.all([

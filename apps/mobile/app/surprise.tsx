@@ -14,11 +14,6 @@ import { track } from '../src/lib/analytics';
 import type { PublicTitle } from '../src/lib/types';
 import { colors, radii, spacing, type } from '../src/theme';
 
-/**
- * "Surprise us" — one pick, no swiping, for the nights when fifteen trailers is
- * too much work. The server biases the choice toward what this person actually
- * says yes to, so it feels like the app knows you rather than rolling a die.
- */
 export default function Surprise() {
   const router = useRouter();
   const user = useUser();

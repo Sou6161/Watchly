@@ -1,24 +1,6 @@
 import PostHog from 'posthog-react-native';
 import type { Decision, TitleType, WatchKind } from '@watchly/shared';
 
-/**
- * Analytics.
- *
- * Deliberately a thin wrapper rather than importing PostHog directly at call
- * sites: it keeps the event vocabulary in one place (so nobody invents
- * `session_start` next to `session_started`), and it makes the whole thing a
- * silent no-op when no key is configured — which is how the test suite, and any
- * fork of this repo, avoid sending someone else's data to our project.
- *
- * FOUR events, chosen because each answers a question that decides whether the
- * product works. A dashboard of forty generic screen_views answers none:
- *
- *   session_started  — which modes/moods/kinds people actually pick
- *   card_swiped      — DO THEY REACH CARD 15? the whole premise is that 15 is right
- *   results_viewed   — how often is the answer zero matches?
- *   service_opened   — the punchline. matches are worthless if nobody presses play
- */
-
 const KEY = process.env.EXPO_PUBLIC_POSTHOG_KEY;
 const HOST = process.env.EXPO_PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com';
 
@@ -29,8 +11,6 @@ export function initAnalytics() {
 
   client = new PostHog(KEY, {
     host: HOST,
-    // Batch rather than firing per event — a swipe deck produces 15 events in
-    // quick succession and each one must not cost a round trip mid-gesture.
     flushAt: 20,
     flushInterval: 30_000,
   });
@@ -41,10 +21,6 @@ export function identify(userId: string, props?: { region?: string; services?: n
   client?.identify(userId, props);
 }
 
-/**
- * Called on sign-out. Without this, the next person to sign in on the same phone
- * inherits the previous user's identity and their events merge together.
- */
 export function resetAnalytics() {
   client?.reset();
 }
@@ -68,18 +44,11 @@ export const track = {
     capture('session_started', {
       mode: p.mode,
       title_type: p.titleType,
-      // 'any' rather than null so it groups cleanly in a breakdown — PostHog
-      // treats null as "property missing", which hides it from charts.
       mood: p.mood ?? 'any',
       max_runtime: p.maxRuntime ?? 0,
     });
   },
 
-  /**
-   * The most valuable event here. `index` is what reveals whether people finish
-   * the deck or quietly give up around card 6 — which would mean 15 is the wrong
-   * number and the core mechanic needs rethinking.
-   */
   cardSwiped(p: { index: number; total: number; decision: Decision; titleType: TitleType }) {
     capture('card_swiped', {
       index: p.index,
@@ -105,19 +74,10 @@ export const track = {
     capture('service_opened', { service: p.service, title_type: p.titleType });
   },
 
-  /**
-   * Trailer playback is opt-in since tap-to-play replaced autoplay, so this is how
-   * we learn whether people actually want the trailer — or whether the poster and
-   * title are enough to decide on.
-   */
   trailerPlayed() {
     capture('trailer_played');
   },
 
-  /**
-   * The watch-loop close. `watched: true` is the strongest evidence the whole
-   * product works — two people agreed AND then actually watched it together.
-   */
   watchLogged(p: { watched: boolean }) {
     capture('watch_logged', { watched: p.watched });
   },

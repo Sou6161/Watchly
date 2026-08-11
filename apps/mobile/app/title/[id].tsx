@@ -23,8 +23,6 @@ import { track } from '../../src/lib/analytics';
 import type { TitleDetail, TitleRecommendation } from '../../src/lib/types';
 import { colors, radii, spacing, type } from '../../src/theme';
 
-/** ISO-639-1 -> a human name, for the languages this catalogue actually returns.
- *  Falls back to the raw code for anything outside this list rather than guessing. */
 const LANGUAGE_NAMES: Record<string, string> = {
   hi: 'Hindi',
   en: 'English',
@@ -46,13 +44,6 @@ const LANGUAGE_NAMES: Record<string, string> = {
   it: 'Italian',
 };
 
-/**
- * The details screen — reached by tapping a title's name (and, wherever the
- * poster isn't already spoken for by "tap for trailer", the poster too). The
- * one place in the app that shows the plot: every card and list deliberately
- * withholds it to avoid spoiling a decision still being made, but once someone
- * has tapped through here they've already asked for more.
- */
 export default function TitleDetails() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -63,8 +54,6 @@ export default function TitleDetails() {
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [trailerOpen, setTrailerOpen] = useState(false);
-  // Which recommendation is mid-resolve, so only THAT thumbnail shows a spinner
-  // rather than blocking the whole screen for what's usually a sub-second lookup.
   const [resolving, setResolving] = useState<number | null>(null);
 
   useEffect(() => {
@@ -129,8 +118,6 @@ export default function TitleDetails() {
     title.language && (LANGUAGE_NAMES[title.language] ?? title.language.toUpperCase()),
   ].filter(Boolean);
 
-  /** A "more like this" tap has no title id yet — only a tmdbId. Resolve it into
-   *  a real, cached title first, then navigate exactly like any other tap. */
   const openRecommendation = async (rec: TitleRecommendation) => {
     if (resolving !== null) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -362,9 +349,6 @@ const s = StyleSheet.create({
   poster: { width: 130, height: 195, borderRadius: radii.card, backgroundColor: colors.purple },
   posterEmpty: { opacity: 0.5 },
 
-  // The poster card can overhang the hero's fixed height slightly on devices
-  // with a tall safe-area inset, so this needs real clearance, not just the
-  // usual spacing.lg gap — otherwise the title crowds right up against it.
   body: { paddingHorizontal: spacing.lg, paddingTop: spacing.xxl, paddingBottom: spacing.xxl },
   title: { ...type.hero, fontSize: 30, lineHeight: 36, color: colors.text, textAlign: 'center' },
 

@@ -47,31 +47,9 @@ authRouter.post(
     const startedAt = Date.now();
     const existing = await prisma.user.findUnique({ where: { email } });
 
-    /**
-     * Hash BEFORE branching, always.
-     *
-     * Returning early on a duplicate skips bcrypt entirely, answering in ~450ms
-     * instead of ~1650ms. That gap is an account-enumeration oracle by itself —
-     * hiding the error message while leaving it would be theatre, since anyone can
-     * time a request.
-     */
     const hashedPassword = await hashPassword(password);
 
     if (existing) {
-      /**
-       * ...and hashing alone still isn't enough: the success path additionally
-       * INSERTs a user and issues tokens, which is two more round trips to a
-       * database in another country. Measured, that left ~550ms still on the
-       * table.
-       *
-       * So pad the rejection out to a fixed floor. Both answers now take about the
-       * same wall-clock time regardless of whether the address exists.
-       *
-       * This is belt-and-braces: the 5-per-hour signup limiter already makes
-       * enumeration impractical (a million addresses would take ~23 years). But
-       * defence that relies on one control is defence that fails when that control
-       * is misconfigured.
-       */
       await padTo(startedAt, env.SIGNUP_TIME_FLOOR_MS);
       throw ApiError.conflict('EMAIL_TAKEN', 'An account already uses that email.');
     }
@@ -83,8 +61,6 @@ authRouter.post(
     const tokens = await issueTokens(user.id);
     const body: AuthResponse = { ...tokens, user: await toPublicUser(user) };
 
-    // Same floor as the rejection path — otherwise success becomes the fast answer
-    // and the oracle simply flips direction.
     await padTo(startedAt, env.SIGNUP_TIME_FLOOR_MS);
     res.status(201).json(body);
   }),
@@ -102,8 +78,6 @@ authRouter.post(
 
     const user = await prisma.user.findUnique({ where: { email } });
 
-    // Deliberately identical error whether the email is unknown or the password
-    // is wrong — otherwise this endpoint doubles as an "is X registered?" oracle.
     const ok = user && (await verifyPassword(password, user.hashedPassword));
     if (!user || !ok) {
       throw ApiError.unauthorized('Email or password is incorrect.');

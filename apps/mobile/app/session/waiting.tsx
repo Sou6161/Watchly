@@ -8,11 +8,6 @@ import { Button, Heading, Screen, Subheading } from '../../src/components/ui';
 import { useSessionStore } from '../../src/stores/session';
 import { colors, radii, spacing, type } from '../../src/theme';
 
-/**
- * Multi-device lobby: person A waits here while person B joins with the code.
- * The socket wakes this screen the moment they do — no polling, no "tap to
- * refresh".
- */
 export default function Waiting() {
   const router = useRouter();
   const session = useSessionStore((s) => s.session);

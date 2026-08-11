@@ -11,10 +11,6 @@ import { openInService } from '../../src/lib/deeplinks';
 import type { PublicTitle, ResultsResponse } from '../../src/lib/types';
 import { colors, radii, spacing, type } from '../../src/theme';
 
-/**
- * Revisiting a past session. Read-only: the matches are already decided, so this
- * is purely "what did we agree on that night, and where do I press play".
- */
 export default function PastSession() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();

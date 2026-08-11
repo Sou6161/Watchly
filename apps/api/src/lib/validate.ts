@@ -1,10 +1,6 @@
 import type { z } from 'zod';
 import { ApiError } from './errors.js';
 
-/**
- * Parses a request body, turning zod issues into a 422 with a field->message
- * map the mobile form can render inline.
- */
 export function parseBody<T extends z.ZodTypeAny>(schema: T, body: unknown): z.infer<T> {
   const result = schema.safeParse(body);
   if (result.success) return result.data;

@@ -5,13 +5,6 @@ import { getSocket } from '../lib/socket';
 import { track } from '../lib/analytics';
 import type { PublicSession, PublicTitle } from '../lib/types';
 
-/**
- * Where we are in a session.
- *
- * SAME_DEVICE runs PERSON_A -> HANDOFF -> PERSON_B -> DONE on one phone.
- * MULTI_DEVICE runs SWIPING -> WAITING_FOR_PARTNER -> DONE on each phone
- * independently; the server decides when both are finished.
- */
 export type Phase =
   | 'PERSON_A'
   | 'HANDOFF'
@@ -94,8 +87,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         titles: res.titles,
         creating: false,
         voter: 'PERSON_A',
-        // Multi-device (live or async) starts person A swiping right away; only
-        // same-device opens on the person-A name gate.
         phase: opts.mode === 'MULTI_DEVICE' ? 'SWIPING' : 'PERSON_A',
       });
       return { id: res.session.id, mode: res.session.mode };
@@ -136,8 +127,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     const socket = await getSocket();
 
-    // Re-registered on every call, so clear first — otherwise a reconnect stacks
-    // duplicate handlers and every event fires N times.
     socket.off('session:joined');
     socket.off('vote:submitted');
     socket.off('session:completed');
@@ -157,8 +146,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     socket.on('vote:submitted', ({ progress }) => set({ progress }));
 
     socket.on('session:completed', ({ progress }) => {
-      // The server decides the session is over, not the client — so both phones
-      // land on results together even if one is mid-animation.
       set({ progress, phase: 'DONE' });
     });
 
@@ -170,14 +157,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (!ack.ok) set({ error: ack.message, abandoned: true });
   },
 
-  /**
-   * Records a swipe and advances.
-   *
-   * The vote is sent but NOT awaited: the card has already flown off screen and
-   * the next one is up, so blocking on a round-trip would stutter the one
-   * interaction that has to feel perfect. The endpoint is idempotent per
-   * (session, title, voter), so a retry or duplicate is harmless.
-   */
   vote: async (decision) => {
     const { session, titles, index, phase, votes, voter } = get();
     if (!session) return;
@@ -191,8 +170,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const asyncMulti = multi && session.isAsync;
     const body = { titleId: title.id, voter: asVoter, decision };
 
-    // Fired here rather than in the card component: every swipe funnels through
-    // this one function, so there is no path that silently skips instrumentation.
     track.cardSwiped({
       index,
       total: titles.length,
@@ -202,10 +179,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     const nextVotes = { ...votes, [`${asVoter}:${title.id}`]: decision };
 
-    // The FINAL async swipe is the one case we await: its response tells us
-    // whether this swipe completed the whole session (person B was already done)
-    // or merely handed off (they haven't started). Every other swipe stays
-    // fire-and-forget so the deck never stutters on a round trip.
     if (asyncMulti && last) {
       let bothDone = false;
       try {
@@ -233,8 +206,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
 
     if (multi) {
-      // Done with our deck, but the other phone may still be going. The server
-      // emits session:completed when both are finished; until then, we wait.
       set({ phase: 'WAITING_FOR_PARTNER', votes: nextVotes });
       return;
     }

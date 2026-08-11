@@ -18,21 +18,6 @@ meRouter.get(
   }),
 );
 
-/**
- * GET /api/me/taste — the couple's taste profile.
- *
- * Built entirely from votes already cast, so there's nothing to opt into and no
- * new data to store: it just reflects the swiping back at people. Two lenses:
- *
- *   - "You love"  — the genres THIS user says yes to most (their side of a
- *     session, never the guest's half of a same-device night).
- *   - "In sync"   — how often, when either of you liked something, you BOTH did.
- *     The one number that says whether you actually have compatible taste.
- *
- * Aggregated in memory rather than SQL: a couple has hundreds of votes, not
- * millions, and the genre counting is a multi-valued array join that's far
- * clearer in TypeScript than in a lateral unnest.
- */
 meRouter.get(
   '/taste',
   wrap(async (req, res) => {
@@ -76,8 +61,6 @@ meRouter.get(
         if (lastWatchedTitleId === null) lastWatchedTitleId = session.watchedTitleId;
       }
 
-      // Which side is the account holder? In same-device they're always person A
-      // (person B is a guest with no account), so their taste is person A's votes.
       const mySide = session.personAId === me.id ? 'PERSON_A' : 'PERSON_B';
 
       const aYes = new Set<string>();
@@ -90,8 +73,6 @@ meRouter.get(
             yes++;
             for (const g of v.title.genres) genreYes.set(g, (genreYes.get(g) ?? 0) + 1);
           }
-          // "Seen it" — the pile of things you've already watched. A fun measure
-          // of how much you two get through.
           if (v.decision === 'SEEN') seen++;
         }
         if (v.decision === 'YES') {
@@ -99,8 +80,6 @@ meRouter.get(
         }
       }
 
-      // Agreement is a property of the couple, not of one person: of everything
-      // either of them liked, how much did they both like?
       for (const id of new Set([...aYes, ...bYes])) {
         eitherYesTotal++;
         if (aYes.has(id) && bYes.has(id)) bothYesTotal++;
@@ -112,10 +91,6 @@ meRouter.get(
       .slice(0, 6)
       .map(([genre, count]) => ({ genre, count }));
 
-    // Weekly rhythm. Bucket each night into a 7-day window counting back from now
-    // (bucket 0 = the last 7 days). "This week" is bucket 0; the streak is the run
-    // of consecutive non-empty buckets from 0 — miss a week and it resets, which
-    // is exactly the nudge that makes a streak worth keeping.
     const WEEK_MS = 7 * 86_400_000;
     const now = Date.now();
     const buckets = new Set<number>();
@@ -129,8 +104,6 @@ meRouter.get(
     let streakWeeks = 0;
     while (buckets.has(streakWeeks)) streakWeeks++;
 
-    // The last thing you actually finished a night on — the loop closed. Shown as
-    // a poster on the taste screen, so the number "watched together" has a face.
     const lastWatched = lastWatchedTitleId
       ? await prisma.title.findUnique({
           where: { id: lastWatchedTitleId },
@@ -144,8 +117,6 @@ meRouter.get(
       yes,
       seen,
       yesRate: swiped > 0 ? yes / swiped : 0,
-      // Null, not zero, when there's nothing to measure yet — the client shows a
-      // "play a few nights" state instead of a damning 0%.
       agreement: eitherYesTotal > 0 ? bothYesTotal / eitherYesTotal : null,
       watchedTogether,
       lastWatched,
@@ -156,17 +127,6 @@ meRouter.get(
   }),
 );
 
-/**
- * DELETE /api/me — permanently delete the account.
- *
- * Not optional: App Store Guideline 5.1.1(v) requires any app offering account
- * creation to offer in-app account deletion, and Google Play's Data Safety policy
- * wants the same. Without this the app gets rejected.
- *
- * Requires the password, so someone who picks up an unlocked phone can't wipe the
- * account. This is destructive and irreversible, so it should be hard to do by
- * accident and impossible to do casually.
- */
 const deleteSchema = z.object({ password: z.string().min(1) });
 
 meRouter.delete(
@@ -179,20 +139,6 @@ meRouter.delete(
       throw ApiError.unauthorized('That password is not right.');
     }
 
-    /**
-     * What goes, and what deliberately stays:
-     *
-     * - The user row, and every session where they were person A (cascade), and
-     *   every vote in those sessions (cascade from session).
-     * - Sessions where they were person B are NOT deleted — they belong to the
-     *   other person's history too. personBId is set to null by the schema, and
-     *   personBLabel survives as plain text, so their partner's past nights still
-     *   read correctly instead of turning into "null's matches".
-     * - Anyone who saved them as a partner has partnerId nulled, not their account
-     *   damaged.
-     *
-     * Titles are shared cache and belong to nobody, so they stay.
-     */
     await prisma.user.delete({ where: { id: me.id } });
 
     res.status(204).end();
@@ -217,9 +163,6 @@ meRouter.patch(
     const me = (req as AuthedRequest).user;
     const patch = parseBody(updateSchema, req.body);
 
-    // Services must be valid for the region the user will be in *after* this
-    // patch — otherwise switching IN -> US would silently leave Zee5 selected
-    // and the title queue would filter against a provider that isn't there.
     const region: Region = patch.region ?? (me.region as Region);
     if (patch.services) {
       const allowed = new Set(servicesForRegion(region).map((s) => s.id));
@@ -232,8 +175,6 @@ meRouter.patch(
       }
     }
 
-    // Changing region without resending services would strand the old region's
-    // services on the account, so drop any that no longer apply.
     let services = patch.services;
     if (patch.region && !patch.services) {
       const allowed = new Set(servicesForRegion(region).map((s) => s.id));

@@ -13,11 +13,6 @@ import { track } from '../src/lib/analytics';
 import type { PublicTitle } from '../src/lib/types';
 import { colors, radii, spacing, type } from '../src/theme';
 
-/**
- * "On the fence" — every title you swiped MAYBE on, gathered in one place. The
- * one swipe that used to lead nowhere now builds a shortlist you can actually
- * come back to.
- */
 export default function Watchlist() {
   const router = useRouter();
   const user = useUser();

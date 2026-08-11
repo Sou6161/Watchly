@@ -13,37 +13,6 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import YoutubePlayer from 'react-native-youtube-iframe';
 import { colors, radii, spacing, type } from '../theme';
 
-/**
- * The trailer, in a proper player.
- *
- * WHY A MODAL AND NOT IN THE CARD
- *
- * The card version could never work, for three compounding reasons:
- *
- *  1. YouTube's iframe decides whether autoplay is allowed from the USER AGENT.
- *     On mobile it refuses, whatever the WebView permits.
- *  2. The in-card player had `controls: false` and sat under `pointerEvents:none`
- *     so the swipe gesture would keep working — which meant that when autoplay was
- *     refused there was no play button AND no way to touch the player. Playback was
- *     literally impossible.
- *  3. A WebView that accepts touches inside a pan gesture fights the swipe anyway.
- *
- * A modal dissolves all three. The player gets real controls, the user's tap is a
- * genuine gesture (which YouTube always honours), and the deck's gestures are
- * untouched because the card isn't involved.
- *
- * Some trailers still refuse to embed anywhere — `embed_not_allowed`. Nothing can
- * play those in-app, so we offer the YouTube app instead of a blank rectangle.
- *
- * ROTATION
- *
- * app.json locks the whole app to portrait — necessary everywhere else, wrong
- * here. While this modal is open we unlock the orientation so the OS will
- * actually rotate when the phone is turned, and re-lock to portrait the moment
- * it closes. Turning the phone sideways swaps the player to fill the screen
- * edge-to-edge instead of relying on YouTube's own (fiddly, WebView-fullscreen)
- * expand button.
- */
 interface Props {
   visible: boolean;
   videoIds: string[];
@@ -58,13 +27,9 @@ export function TrailerModal({ visible, videoIds, title, onClose }: Props) {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
-  // Defensive: an older API response (before multi-trailer) could omit the array
-  // entirely, and indexing undefined would crash the whole deck.
   const ids = videoIds ?? [];
   const videoId = ids[pickIndex] ?? ids[0];
 
-  // A new trailer deserves a clean slate — otherwise one blocked video would leave
-  // the fallback showing for the next one.
   useEffect(() => {
     if (visible) {
       setPickIndex(0);
@@ -78,9 +43,6 @@ export function TrailerModal({ visible, videoIds, title, onClose }: Props) {
     setBlocked(false);
   }, [pickIndex]);
 
-  // Unlock rotation only while the trailer is on screen — the rest of the app
-  // (including the card behind it) stays portrait-only. Re-lock to portrait when
-  // the modal closes so the deck can never come back sideways.
   useEffect(() => {
     if (!visible) return;
     ScreenOrientation.unlockAsync();
@@ -89,11 +51,6 @@ export function TrailerModal({ visible, videoIds, title, onClose }: Props) {
     };
   }, [visible]);
 
-  // YouTube's fullscreen button triggers Android's *native* WebView fullscreen,
-  // which fills the screen but never rotates the DEVICE — so a 16:9 trailer ends
-  // up letterboxed inside a portrait screen. This is the event that fires when
-  // that happens; force landscape on the way in, portrait on the way out, and the
-  // video fills the screen the way "fullscreen" is supposed to.
   const onFullScreenChange = useCallback((isFullScreen: boolean) => {
     ScreenOrientation.lockAsync(
       isFullScreen
@@ -109,8 +66,6 @@ export function TrailerModal({ visible, videoIds, title, onClose }: Props) {
     );
   };
 
-  // Portrait: a fixed 16:9 box sized for a phone. Landscape: fill the width the
-  // phone is now offering, capped by height so it never crops.
   const playerW = isLandscape ? Math.min(width, height * (16 / 9)) : PORTRAIT_W;
   const playerH = Math.round((playerW * 9) / 16);
 
@@ -152,14 +107,7 @@ export function TrailerModal({ visible, videoIds, title, onClose }: Props) {
                   width={playerW}
                   play={visible}
                   videoId={videoId}
-                  /**
-                   * Controls ON, deliberately. If YouTube declines to autoplay,
-                   * the user needs a play button — the version without one was
-                   * unplayable whenever autoplay was refused.
-                   */
                   initialPlayerParams={{ controls: true, modestbranding: true, rel: false }}
-                  // Desktop user agent on Android, which is what lets autoplay
-                  // through at all. Harmless when the user taps play themselves.
                   forceAndroidAutoplay
                   onReady={() => setReady(true)}
                   onFullScreenChange={onFullScreenChange}

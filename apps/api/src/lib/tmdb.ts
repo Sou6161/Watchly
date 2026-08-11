@@ -7,11 +7,6 @@ export const BACKDROP_BASE = 'https://image.tmdb.org/t/p/w1280';
 /** Small — these render as ~50px circular headshots in a cast row. */
 export const PROFILE_BASE = 'https://image.tmdb.org/t/p/w185';
 
-/**
- * TMDB issues two credential styles: a v3 API key (query param) and a v4 read
- * access token (JWT, Authorization header). People grab whichever the dashboard
- * showed them, so accept both rather than making the key style a setup footgun.
- */
 function authFor(url: URL): Record<string, string> {
   const key = env.TMDB_API_KEY;
   if (!key) throw new Error('TMDB_API_KEY is not set.');
@@ -38,11 +33,6 @@ async function tmdb<T>(path: string, params: Record<string, string> = {}): Promi
     try {
       res = await fetch(url, { headers });
     } catch (err) {
-      // ECONNRESET/ETIMEDOUT and friends. Over a full sync (thousands of
-      // requests) these are a matter of when, not if. TMDB seems to reset the
-      // connection when hit hard for a sustained stretch, so back off properly
-      // — up to ~16s — rather than retrying three times in 3 seconds and giving
-      // up while it's still angry.
       if (last) throw err;
       await sleep(2 ** attempt * 500);
       continue;
@@ -123,8 +113,6 @@ interface TmdbReleaseDateEntry {
 
 export interface TmdbDetail {
   id: number;
-  // These live on the detail response directly (no append needed) — used by
-  // getOrFetchTitle, which has no /discover list item to pull them from instead.
   title?: string; // movies
   name?: string; // tv
   poster_path?: string | null;
@@ -147,8 +135,6 @@ export interface TmdbDetail {
     >;
   };
   credits?: { cast: TmdbCastMember[] };
-  // Movies only (append key "release_dates"). Certification is nested one level
-  // deeper than TV's, and repeated per release type (theatrical, digital, ...).
   release_dates?: { results: { iso_3166_1: string; release_dates: TmdbReleaseDateEntry[] }[] };
   // TV only (append key "content_ratings"). Flat — one rating per country.
   content_ratings?: { results: { iso_3166_1: string; rating: string }[] };
@@ -164,8 +150,6 @@ export function listPage(
   if (kind === 'trending') {
     return tmdb<TmdbPage>(`/trending/${media}/week`, { page: String(page) });
   }
-  // /discover beats /movie/popular here: it's the only one that can filter to
-  // titles actually watchable in a region, which is the whole point for India.
   return tmdb<TmdbPage>(`/discover/${media}`, {
     page: String(page),
     watch_region: region,
@@ -175,14 +159,6 @@ export function listPage(
   });
 }
 
-/**
- * /discover with arbitrary params — the lazy catalog needs to pass provider ids,
- * genres and runtime, which listPage() doesn't expose.
- *
- * Note what /discover CANNOT do: filter to titles that have a trailer. There is no
- * such parameter, and about half of all titles don't have one — which is why the
- * caller over-fetches and drops them after checking /videos per title.
- */
 export function discover(
   media: 'movie' | 'tv',
   params: Record<string, string>,
@@ -196,16 +172,6 @@ export async function genreMap(media: 'movie' | 'tv'): Promise<Map<string, numbe
   return new Map(res.genres.map((g) => [g.name, g.id]));
 }
 
-/**
- * One call gets details, trailers, providers, cast, certification, and
- * recommendations — appending more `append_to_response` keys costs nothing
- * extra over the network (still one request), just a larger JSON body.
- *
- * Certification lives at a different key per media type: movies certify through
- * `release_dates`, TV through `content_ratings`. There's no third option that
- * works for both, so this picks the right one rather than requesting both and
- * discarding half.
- */
 export function detail(media: 'movie' | 'tv', id: number): Promise<TmdbDetail> {
   const certKey = media === 'movie' ? 'release_dates' : 'content_ratings';
   return tmdb<TmdbDetail>(`/${media}/${id}`, {
@@ -221,15 +187,8 @@ export function providersInRegion(media: 'movie' | 'tv', region: string) {
   );
 }
 
-/** Many titles today ship a teaser, a trailer, AND a "final trailer" — this caps
- * how many we keep so the picker in the app never has to scroll. */
 const MAX_TRAILERS = 3;
 
-/**
- * Ranks the playable trailers/teasers for a title, official and highest-res
- * first, and keeps the top few. Titles with nothing playable get dropped from
- * the catalog entirely — a card with no trailer is a dead card.
- */
 export function pickTrailers(videos: TmdbVideo[]): string[] {
   const youtube = videos.filter((v) => v.site === 'YouTube' && v.key);
   const rank = (v: TmdbVideo) => {
@@ -239,8 +198,6 @@ export function pickTrailers(videos: TmdbVideo[]): string[] {
   };
   const ranked = youtube.sort((a, b) => rank(a) - rank(b) || b.size - a.size);
 
-  // A title can list the same YouTube video twice (region duplicates); keep
-  // only the first, best-ranked occurrence of each key.
   const seen = new Set<string>();
   const keys: string[] = [];
   for (const v of ranked) {

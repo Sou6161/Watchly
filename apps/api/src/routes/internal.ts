@@ -9,17 +9,6 @@ export const internalRouter = Router();
 /** Tracks the running sync so a second trigger can't start a concurrent one. */
 let syncRunning = false;
 
-/**
- * POST /internal/sync-catalog
- *
- * The nightly catalog refresh, triggered externally (see
- * .github/workflows/sync-catalog.yml).
- *
- * Not an in-process cron: Render's free tier spins the instance down after ~15
- * minutes of inactivity, so a `node-cron` timer would simply never fire on a
- * sleeping dyno at 3am. An external scheduler that makes an HTTP request both
- * wakes the instance and runs the job.
- */
 internalRouter.post(
   '/sync-catalog',
   wrap(async (req, res) => {
@@ -35,14 +24,10 @@ internalRouter.post(
     }
 
     if (syncRunning) {
-      // A sync takes many minutes. Overlapping runs would double every TMDB
-      // request for no benefit.
       res.status(409).json({ error: { code: 'ALREADY_RUNNING', message: 'Sync already running.' } });
       return;
     }
 
-    // The sync outlives any sane HTTP timeout, so acknowledge now and run
-    // detached. The scheduler only needs to know we accepted the job.
     syncRunning = true;
     res.status(202).json({ started: true });
 

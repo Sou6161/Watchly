@@ -36,8 +36,6 @@ export const sessionsRouter = Router();
 
 sessionsRouter.use(requireAuth);
 
-// Zod needs a non-empty tuple of literals; derive them from the shared lists so a
-// new era/rating/language option can never drift out of sync with validation.
 const ERA_IDS = ERA_FILTERS.map((e) => e.id) as [string, ...string[]];
 const RATING_IDS = RATING_FILTERS.map((r) => r.id) as [string, ...string[]];
 const LANGUAGE_IDS = LANGUAGE_FILTERS.map((l) => l.id) as [string, ...string[]];
@@ -48,8 +46,6 @@ const createSchema = z.object({
   titleType: z.enum(['MOVIE', 'TV']),
   mood: z.enum(MOOD_IDS as [string, ...string[]]).nullish(),
   maxRuntime: z.number().int().positive().max(600).nullish(),
-  // Extra "rules". Sent as ids; the server resolves them to concrete filter
-  // values. All default to no-op, so an old client omitting them is unaffected.
   era: z.enum(ERA_IDS).optional(),
   rating: z.enum(RATING_IDS).optional(),
   language: z.enum(LANGUAGE_IDS).optional(),
@@ -63,18 +59,9 @@ const createSchema = z.object({
   // Same-device only: the two names typed at session start.
   personALabel: z.string().trim().min(1).max(24).optional(),
   personBLabel: z.string().trim().min(1).max(24).optional(),
-  // Async: person A swipes now and person B finishes whenever. Only meaningful
-  // for multi-device — a same-device night already has both people present.
   async: z.boolean().optional(),
 });
 
-/**
- * POST /api/sessions
- *
- * The title queue is built once, here, and frozen on the session. Both people
- * must swipe the same titles in the same order — rebuilding it per request would
- * reshuffle (the queue is randomised) and desync the two of them.
- */
 sessionsRouter.post(
   '/',
   wrap(async (req, res) => {
@@ -83,8 +70,6 @@ sessionsRouter.post(
 
     const region: Region = body.region ?? (me.region as Region);
     const services = body.services ?? me.services;
-    // Async only applies to two-phone sessions; a same-device night is inherently
-    // synchronous. Silently ignore the flag rather than erroring on a harmless combo.
     const isAsync = body.mode === 'MULTI_DEVICE' && body.async === true;
 
     if (services.length === 0) {
@@ -93,13 +78,8 @@ sessionsRouter.post(
 
     const deckSize = body.deckSize ?? SESSION_QUEUE_SIZE;
 
-    // Adaptive taste: when the user hasn't asked for a specific mood, gently bias
-    // the deck toward the genres they keep saying yes to. A chosen mood is an
-    // explicit override, so we don't second-guess it with history.
     const tasteGenres = body.mood ? [] : await lovedGenres(me.id, body.titleType);
 
-    // Fetches from TMDB and caches on the fly if the local catalogue can't
-    // already satisfy these filters.
     const titles = await ensureQueue(
       prisma,
       {
@@ -130,9 +110,6 @@ sessionsRouter.post(
         code: await generateSessionCode(prisma),
         mode: body.mode,
         isAsync,
-        // Same-device and async both start swiping immediately (async person A
-        // doesn't wait for anyone); only a LIVE multi-device night waits in the
-        // lobby for person B to punch in the code.
         status: body.mode === 'SAME_DEVICE' || isAsync ? 'IN_PROGRESS' : 'WAITING',
         personAId: me.id,
         personALabel: body.personALabel ?? me.displayName,
@@ -150,15 +127,6 @@ sessionsRouter.post(
   }),
 );
 
-/**
- * GET /api/sessions — the caller's recent sessions, newest first.
- *
- * Computing match counts by pulling every vote for every session would be N+1 in
- * the worst place (the home screen, on every launch). Instead one grouped query
- * gets the YES votes for all the sessions at once, and matches are counted in
- * memory — a match is a title both people said YES to, so it's just the titles
- * whose YES count is 2.
- */
 const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(20).default(5),
   offset: z.coerce.number().int().min(0).default(0),
@@ -180,8 +148,6 @@ sessionsRouter.get(
       ...(q.mode && { mode: q.mode }),
     };
 
-    // Fetch one more than asked for: its presence is how we know there's a next
-    // page without a second COUNT query.
     const rows = await prisma.session.findMany({
       where,
       orderBy: { completedAt: 'desc' },
@@ -261,28 +227,13 @@ sessionsRouter.get(
   }),
 );
 
-/**
- * GET /api/sessions/watch-check — the morning-after prompt, or null.
- *
- * Returns the most recent completed, matched session the caller hasn't told us
- * about yet — the one worth asking "did you actually watch it?". Nulls out fast
- * in the common case (nothing pending), so the home screen pays almost nothing.
- *
- * Registered ABOVE GET /:id on purpose: Express matches in order, and /:id would
- * otherwise swallow "watch-check" as a session id.
- */
 sessionsRouter.get(
   '/watch-check',
   wrap(async (req, res) => {
     const me = (req as AuthedRequest).user;
     const since = new Date(Date.now() - WATCH_CHECK_WINDOW_DAYS * 86_400_000);
-    // Not too fresh: give the night time to actually happen before asking about it,
-    // so the prompt lands the morning after rather than the instant they match.
     const settled = new Date(Date.now() - WATCH_CHECK_MIN_AGE_HOURS * 3_600_000);
 
-    // Newest-first, but a zero-match night has nothing to have watched — so walk a
-    // few back until we find one with actual matches rather than nagging or giving
-    // up at the first empty session.
     const candidates = await prisma.session.findMany({
       where: {
         OR: [{ personAId: me.id }, { personBId: me.id }],
@@ -317,16 +268,6 @@ sessionsRouter.get(
   }),
 );
 
-/**
- * GET /api/sessions/active — the caller's open async sessions.
- *
- * These are the "still going" nights: person A has swiped (or is swiping) and is
- * waiting on person B, or vice-versa. Powers the home screen's "in progress"
- * strip. Live sessions never appear here — they're transient and driven by the
- * socket, not something you come back to later.
- *
- * Above GET /:id for the same routing reason as watch-check.
- */
 sessionsRouter.get(
   '/active',
   wrap(async (req, res) => {
@@ -353,8 +294,6 @@ sessionsRouter.get(
           session: toPublicSession(s),
           partnerLabel: iAmA ? s.personBLabel : s.personALabel,
           progress,
-          // Whose move is it? If the caller hasn't finished, it's theirs; if they
-          // have but the partner hasn't, they're waiting.
           yourTurn: !mineDone,
           waitingOnPartner: mineDone && !theirsDone,
         };
@@ -365,12 +304,6 @@ sessionsRouter.get(
   }),
 );
 
-/**
- * POST /api/sessions/:id/watched — the couple's answer to the watch-loop prompt.
- *
- * watchedTitleId is one of this session's matches (they watched it) or null (they
- * didn't get to it). Either way watchLoggedAt is set, so we never ask twice.
- */
 const watchedSchema = z.object({
   watchedTitleId: z.string().min(1).nullable(),
 });
@@ -382,8 +315,6 @@ sessionsRouter.post(
     const session = await loadSessionForUser(req.params.id!, me.id);
     const { watchedTitleId } = parseBody(watchedSchema, req.body);
 
-    // A watched title must be a real match of this session — otherwise the taste
-    // profile can't trust "watched" as ground truth over a mere swipe.
     if (watchedTitleId !== null) {
       const ids = await matchedTitleIds(session.id);
       if (!ids.includes(watchedTitleId)) {
@@ -401,13 +332,6 @@ sessionsRouter.post(
   }),
 );
 
-/**
- * POST /api/sessions/:code/join — person B joins a multi-device session by code.
- *
- * Idempotent: rejoining a session you're already in returns it rather than
- * erroring, so a reconnect or a double-tap can't lock someone out of their own
- * session.
- */
 sessionsRouter.post(
   '/:code/join',
   wrap(async (req, res) => {
@@ -464,13 +388,6 @@ const voteSchema = z.object({
   decision: z.enum(['YES', 'NO', 'SEEN', 'MAYBE']),
 });
 
-/**
- * POST /api/sessions/:id/votes
- *
- * Idempotent per (session, title, voter): re-submitting overwrites. A flaky
- * network shouldn't cost someone a swipe, and the unique constraint means a
- * retry would otherwise 500.
- */
 sessionsRouter.post(
   '/:id/votes',
   wrap(async (req, res) => {
@@ -483,14 +400,10 @@ sessionsRouter.post(
 
     const { titleId, voter, decision } = parseBody(voteSchema, req.body);
 
-    // Only titles actually dealt in this session may be voted on — otherwise a
-    // client could stuff the results with anything in the catalog.
     if (!session.titleQueue.includes(titleId)) {
       throw ApiError.badRequest('That title is not part of this session.');
     }
 
-    // In multi-device, person A can only vote as PERSON_A and B as PERSON_B.
-    // In same-device one account submits both, so any voter is legitimate.
     if (session.mode === 'MULTI_DEVICE') {
       const expected = session.personAId === me.id ? 'PERSON_A' : 'PERSON_B';
       if (voter !== expected) {
@@ -511,18 +424,8 @@ sessionsRouter.post(
 
     const progress = await getProgress(session);
 
-    // Broadcast the counts (never the decision) so the partner's phone can show
-    // "they're on 7 of 15" without revealing anything.
     emitVoteSubmitted(session.id, progress);
 
-    /**
-     * The last vote of the session closes it, server-side. Leaving completion to
-     * the clients would mean whoever finishes second decides when it's over — and
-     * if their app dies on that final swipe, the session hangs forever with both
-     * people's votes stranded.
-     */
-    // (No need to check the status isn't already COMPLETED — the guard at the top
-    // of this handler has already rejected closed sessions.)
     if (progress.bothDone) {
       await prisma.session.update({
         where: { id: session.id },
@@ -571,20 +474,12 @@ sessionsRouter.get(
   }),
 );
 
-/**
- * GET /api/sessions/:id/results — the titles both people said YES to.
- *
- * MAYBE deliberately doesn't count as a match: the promise on the results screen
- * is "you both said yes", and quietly widening that would erode trust in it.
- */
 sessionsRouter.get(
   '/:id/results',
   wrap(async (req, res) => {
     const me = (req as AuthedRequest).user;
     const session = await loadSessionForUser(req.params.id!, me.id);
 
-    // Every vote, not just the YESes: near-misses need to know what the OTHER
-    // person said, which means we have to see the NOs and MAYBEs too.
     const votes = await prisma.vote.findMany({ where: { sessionId: session.id } });
 
     // titleId -> { PERSON_A?: Decision, PERSON_B?: Decision }
@@ -596,9 +491,6 @@ sessionsRouter.get(
     }
 
     const matchedIds: string[] = [];
-    // A near-miss is a title exactly one person said YES to. It turns the dead
-    // end of a zero-match night into a shortlist worth arguing over — and even on
-    // a matched night, "you were close on these" is a nice second act.
     const nearMissRaw: { titleId: string; likedBy: Voter; otherDecision: Decision | null }[] = [];
 
     for (const [titleId, decs] of byTitle) {
@@ -613,10 +505,6 @@ sessionsRouter.get(
       }
     }
 
-    // Closest first: a MAYBE from the other side means they were tempted; an
-    // unvoted title (async, or they quit early) is a genuine unknown; a NO is the
-    // furthest thing from agreement. SEEN we drop — you can't watch it "together"
-    // if one of you already has.
     const closeness = (d: Decision | null) =>
       d === 'MAYBE' ? 0 : d === null ? 1 : d === 'NO' ? 2 : 3;
     const nearMisses = nearMissRaw
@@ -634,13 +522,6 @@ sessionsRouter.get(
       .filter((id) => matchedIds.includes(id) && byId.has(id))
       .map((id) => byId.get(id)!);
 
-    /**
-     * The other person's account id, so the results screen can offer "Save
-     * partner". Null for same-device sessions — the second player there is just
-     * a name typed on this phone, not an account, so there is nobody to save.
-     * Computed per-caller rather than baked into toPublicSession, which has no
-     * idea who is asking.
-     */
     const partnerUserId =
       session.mode === 'MULTI_DEVICE'
         ? session.personAId === me.id
@@ -664,23 +545,12 @@ sessionsRouter.get(
 
 /* ------------------------------------------------------------------ helpers */
 
-/**
- * The session's titles, in queue order.
- *
- * findMany does not preserve the order of an `in` list, and order is the one
- * thing that absolutely must survive: both people swipe the same titles in the
- * same sequence, and a reshuffle would silently desync the two phones.
- */
 async function orderedTitles(session: Session) {
   const titles = await prisma.title.findMany({ where: { id: { in: session.titleQueue } } });
   const byId = new Map(titles.map((t) => [t.id, t]));
   return session.titleQueue.map((id) => byId.get(id)).filter((t) => t !== undefined);
 }
 
-/**
- * The titles both people said YES to in one session — its matches. Shared by the
- * watch-loop prompt and the /watched guard so "a match" means one thing everywhere.
- */
 async function matchedTitleIds(sessionId: string): Promise<string[]> {
   const yes = await prisma.vote.findMany({
     where: { sessionId, decision: 'YES' },

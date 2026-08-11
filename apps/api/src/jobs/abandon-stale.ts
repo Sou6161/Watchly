@@ -4,23 +4,6 @@ import { emitSessionAbandoned } from '../realtime.js';
 
 const SWEEP_INTERVAL_MS = 60_000;
 
-/**
- * Closes sessions nobody has touched in a while.
- *
- * Without this, every abandoned session sits in WAITING/IN_PROGRESS forever: its
- * code stays claimed, it clutters the user's history, and a partner who wanders
- * back hours later would silently resume a session the other person has long
- * forgotten. `lastActivityAt` is bumped on every vote and on join.
- *
- * Two timeouts, because the two kinds of session mean idleness differently: a
- * LIVE session idle for 30 minutes has been walked away from, but an ASYNC session
- * is SUPPOSED to sit untouched until person B gets to it — so it gets days, not
- * minutes, before we give up on it.
- *
- * Runs in-process on a timer rather than as an external cron: unlike the nightly
- * catalog sync (which must fire on a sleeping instance), this only matters while
- * the server is up and there are live sessions to abandon.
- */
 export function startAbandonmentSweep() {
   const sweep = async () => {
     try {
@@ -45,8 +28,6 @@ export function startAbandonmentSweep() {
         data: { status: 'ABANDONED' },
       });
 
-      // Anyone still holding the session open gets told, rather than swiping into
-      // a session the server has already written off.
       for (const { id } of stale) emitSessionAbandoned(id);
 
       console.log(`Abandoned ${stale.length} idle session(s).`);

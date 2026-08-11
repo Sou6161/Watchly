@@ -25,20 +25,14 @@ const room = (sessionId: string) => `session:${sessionId}`;
 export function initRealtime(httpServer: HttpServer) {
   io = new Server<ClientToServerEvents, ServerToClientEvents, never, SocketData>(httpServer, {
     cors: { origin: '*' },
-    // Phones lose signal, tunnel, and background constantly. Be patient before
-    // declaring someone gone — a 20s window survives a lift ride.
     pingTimeout: 20_000,
     pingInterval: 10_000,
-    // Lets a dropped client resume its session (and its buffered events) rather
-    // than reconnecting as a stranger.
     connectionStateRecovery: {
       maxDisconnectionDuration: 2 * 60 * 1000,
       skipMiddlewares: false,
     },
   });
 
-  // Authenticate on the handshake, not after connecting. An unauthenticated
-  // socket should never reach a room.
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token as string | undefined;
     if (!token) return next(new Error('Missing access token.'));
@@ -88,8 +82,6 @@ export function initRealtime(httpServer: HttpServer) {
     socket.on('disconnect', () => {
       const { sessionId } = socket.data;
       if (!sessionId) return;
-      // Votes are already persisted server-side, so a drop costs nothing but the
-      // partner's peace of mind — which is exactly what this event is for.
       socket.to(room(sessionId)).emit('partner:disconnected');
     });
   });
@@ -97,10 +89,6 @@ export function initRealtime(httpServer: HttpServer) {
   console.log('Socket.io ready');
   return io;
 }
-
-/* --------------------------------------------------------------- emitters */
-/* Called from the HTTP routes: votes still arrive over REST (they must persist
-   even if the socket is down), and the socket layer only broadcasts the result. */
 
 export function emitSessionJoined(
   sessionId: string,

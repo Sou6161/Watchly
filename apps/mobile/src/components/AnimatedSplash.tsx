@@ -20,17 +20,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { bgGradient, colors, spacing, type } from '../theme';
 
-/**
- * The launch animation — the app icon coming to life.
- *
- * The native splash (the gold play mark on deep purple) is the instant first
- * frame. This overlay mounts on top and choreographs the brand: a red glow blooms
- * behind the mark exactly like the icon's, the play mark springs in with a hair of
- * overshoot, the "Watchly" wordmark rises out from behind a line, a gold rule
- * draws beneath it, and the tagline settles in — then the whole thing dissolves
- * into the app. Staged, hand-eased, and purely time-based so it can never hang the
- * boot.
- */
 const MARK = 132; // play-mark canvas size
 const GLOW = 300; // red bloom diameter
 
@@ -159,8 +148,6 @@ export function AnimatedSplash({ onFinish }: { onFinish: () => void }) {
 const s = StyleSheet.create({
   root: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bgBottom },
   center: { alignItems: 'center', justifyContent: 'center' },
-  // Fixed-size box the glow and mark both centre against — see the comment above
-  // where it's used. Sized to the glow itself; the mark just centres inside it.
   badge: { width: GLOW, height: GLOW, alignItems: 'center', justifyContent: 'center' },
   glowFill: { alignItems: 'center', justifyContent: 'center' },
 

@@ -6,14 +6,6 @@ import { Button, Heading, Screen, Subheading } from '../../src/components/ui';
 import { useSessionStore } from '../../src/stores/session';
 import { colors, radii, spacing, type } from '../../src/theme';
 
-/**
- * The async hand-off. Person A has swiped their fifteen; now person B needs the
- * code, on their own time. Reached two ways: straight after A finishes an async
- * deck, and from the home screen's "in progress" strip to re-share a code.
- *
- * Purely a share surface — no socket, no waiting. The matches appear in A's
- * history the moment B finishes, and the watch-loop takes it from there.
- */
 export default function ShareSession() {
   const router = useRouter();
   const { code, partner } = useLocalSearchParams<{ code: string; partner?: string }>();

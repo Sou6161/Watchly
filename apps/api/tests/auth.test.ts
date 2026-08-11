@@ -41,12 +41,6 @@ describe('auth', () => {
     expect(wrongPassword.body.error.message).toBe(unknownEmail.body.error.message);
   });
 
-  /**
-   * Regression: the refresh token payload was once just {sub, typ}, and `iat` has
-   * only second granularity — so two tokens minted for the same user within the
-   * same second came out BYTE-IDENTICAL. Rotation was a silent no-op and the "old"
-   * token kept working. A random jti fixes it. This test would have caught it.
-   */
   it('rotates the refresh token, and the old one stops working', async () => {
     const user = await signUp('a@example.com', 'A');
 
@@ -108,10 +102,6 @@ describe('password strength', () => {
   const signup = (password: string, email = 'x@example.com') =>
     request(app).post('/api/auth/signup').send({ email, password, displayName: 'X' });
 
-  /**
-   * A minimum length alone is close to useless — every one of these is eight
-   * characters and every one is near the top of a credential-stuffing list.
-   */
   it.each(['password', '12345678', 'qwertyui', 'password123', 'iloveyou'])(
     'rejects the common password %s',
     async (pw) => {

@@ -30,8 +30,6 @@ export default function NewSession() {
 
   const sameDevice = mode !== 'MULTI_DEVICE';
 
-  // Movie night or series night. Defaults to a movie — the classic 'movie night'
-  // case — but it's the first thing on screen, so switching is one tap.
   const [kind, setKind] = useState<WatchKind>('MOVIE');
   const [mood, setMood] = useState<string | null>(null);
   const [duration, setDuration] = useState<string>('any');
@@ -41,8 +39,6 @@ export default function NewSession() {
   const [deckSize, setDeckSize] = useState<number>(15);
   const [personA, setPersonA] = useState(user?.displayName ?? 'Person A');
   const [personB, setPersonB] = useState('Person B');
-  // Multi-device only: are both people here now, or does one swipe first and the
-  // other finish later?
   const [asyncMode, setAsyncMode] = useState(false);
 
   const start = async () => {
@@ -52,8 +48,6 @@ export default function NewSession() {
       mode: sameDevice ? 'SAME_DEVICE' : 'MULTI_DEVICE',
       titleType: kind,
       mood,
-      // The server ignores this for series anyway; not sending it keeps the
-      // request honest about what was actually asked for.
       maxRuntime: kind === 'MOVIE' ? maxRuntime : null,
       era,
       rating,
@@ -75,18 +69,11 @@ export default function NewSession() {
       maxRuntime: kind === 'MOVIE' ? maxRuntime : null,
     });
 
-    // Same-device and async both send person A straight to the deck — neither
-    // waits in the live lobby. (Async has no live partner; the code is shared
-    // after A finishes, from the share screen.)
     if (sameDevice || asyncMode) {
       router.replace('/session/swipe');
       return;
     }
 
-    // Open the socket BEFORE showing the code. Otherwise a partner who types it in
-    // fast enough could join before we're listening, and the session:joined event
-    // would fire into a room we aren't in yet — leaving person A stuck on the
-    // waiting screen forever while person B swipes.
     await connect();
     router.replace('/session/waiting');
   };

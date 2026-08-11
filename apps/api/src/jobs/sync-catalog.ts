@@ -9,11 +9,6 @@ import {
   extractRecommendations,
 } from '../lib/titleExtract.js';
 
-/**
- * TMDB provider_id -> our internal service id, per region. Must be per-region:
- * TMDB gives Prime Video id 119 in IN but 9 in US, so a single flat map would
- * mis-attribute providers across territories.
- */
 const PROVIDER_TO_SERVICE: Record<Region, Map<number, string>> = {
   IN: new Map(),
   US: new Map(),
@@ -26,16 +21,6 @@ for (const svc of STREAMING_SERVICES) {
   }
 }
 
-/**
- * Pages per (kind x media x region), 20 results per page. There are 8 such lists
- * (2 regions x 2 media x 2 kinds), and they overlap heavily — the same film is
- * popular in both IN and US, and trending titles are usually popular ones. After
- * dedupe, and after ~40% of candidates are dropped for having no trailer or no
- * streaming provider, 100 pages lands in the spec's 5–10k range.
- *
- * Tunable because the ceiling is TMDB's, not ours: `SYNC_PAGES=10 npm run sync`
- * gives a fast partial catalog for local work.
- */
 const PAGES_PER_LIST = Number(process.env.SYNC_PAGES ?? 100);
 
 /** Parallel detail fetches. TMDB tolerates ~50/s; this stays well clear. */
@@ -47,13 +32,6 @@ interface Candidate {
   item: TmdbListItem;
 }
 
-/**
- * Nightly catalog refresh.
- *
- * Two passes, because a title's *providers* are region-specific but its
- * *metadata* is not: we gather candidate ids per region, then fetch each unique
- * title once and record providers for every region it's available in.
- */
 export async function syncCatalog(): Promise<{ scanned: number; cached: number; skipped: number }> {
   const candidates = new Map<string, Candidate>();
   let badPages = 0;
@@ -66,8 +44,6 @@ export async function syncCatalog(): Promise<{ scanned: number; cached: number; 
           try {
             res = await listPage(kind, media, region, page);
           } catch (err) {
-            // One flaky page must not throw away a 15-minute run. Losing 20
-            // candidates out of ~16,000 is invisible; losing the whole sync is not.
             badPages++;
             console.warn(
               `  page ${page} of ${kind}/${media}/${region} failed, skipping:`,
@@ -81,8 +57,6 @@ export async function syncCatalog(): Promise<{ scanned: number; cached: number; 
           }
           if (page >= res.total_pages) break;
 
-          // Pacing. Firing ~800 list requests back-to-back is what was drawing
-          // connection resets out of TMDB in the first place.
           await sleep(60);
         }
       }
@@ -121,8 +95,6 @@ export async function syncCatalog(): Promise<{ scanned: number; cached: number; 
 async function upsertTitle({ tmdbId, media, item }: Candidate): Promise<'cached' | 'skipped'> {
   const d = await detail(media, tmdbId);
 
-  // No trailer, no card. This is the single biggest filter in the pipeline —
-  // swiping on a title you can't watch a trailer for is the whole product failing.
   const trailerYoutubeIds = pickTrailers(d.videos?.results ?? []);
   if (trailerYoutubeIds.length === 0) return 'skipped';
 
@@ -147,8 +119,6 @@ async function upsertTitle({ tmdbId, media, item }: Candidate): Promise<'cached'
     releaseYear: date ? Number(date.slice(0, 4)) : null,
     runtime: runtime ?? null,
     rating: item.vote_average,
-    // Cached but never shown on a card — the spec forbids plot synopses (spoilers).
-    // Kept for possible use on the results screen, where the decision is already made.
     overview: item.overview || null,
     language: item.original_language,
     topCast: extractCast(d) as unknown as Prisma.InputJsonValue,
@@ -170,14 +140,6 @@ async function upsertTitle({ tmdbId, media, item }: Candidate): Promise<'cached'
 
 type ProviderMap = Partial<Record<Region, { flatrate: string[] }>>;
 
-/**
- * Reduces TMDB's per-region provider block to the services we actually support,
- * expressed as our internal ids so the queue filter can compare directly against
- * User.services.
- *
- * Only flatrate/free/ads count as "streamable" — a title you'd have to rent for
- * ₹149 is not something to surface as "you both have this".
- */
 function mapProviders(d: TmdbDetailLike): ProviderMap {
   const out: ProviderMap = {};
   const byRegion = d['watch/providers']?.results ?? {};
@@ -204,12 +166,6 @@ function mapProviders(d: TmdbDetailLike): ProviderMap {
 
 type TmdbDetailLike = Awaited<ReturnType<typeof detail>>;
 
-/**
- * Run directly (`npm run sync -w @watchly/api`) rather than imported. This file
- * is also imported by routes/internal.ts, where this block must NOT fire — hence
- * the argv check rather than just running on import. Matches both the tsx path
- * (.ts) and the compiled one (.js).
- */
 const isEntrypoint = /sync-catalog\.(ts|js)$/.test(process.argv[1] ?? '');
 if (isEntrypoint) {
   const started = Date.now();

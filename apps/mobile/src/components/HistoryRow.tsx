@@ -76,8 +76,6 @@ const s = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.md,
     borderRadius: radii.md,
-    // Opaque, not translucent — Android renders elevation/borders against the
-    // backing rect and a see-through fill leaks a pale box past the corners.
     backgroundColor: '#241640',
     borderWidth: 1,
     borderColor: colors.border,

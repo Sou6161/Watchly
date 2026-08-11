@@ -11,13 +11,6 @@ import Animated, {
 import { Button } from './ui';
 import { colors, radii, spacing, type } from '../theme';
 
-/**
- * A shimmering placeholder block.
- *
- * Warm, not grey: a cold #eee skeleton on a deep-purple gradient looks like a
- * rendering bug. This pulses between two tints of the surface colour, so a
- * loading screen still reads as Watchly.
- */
 export function Skeleton({ style }: { style?: ViewStyle | ViewStyle[] }) {
   const pulse = useSharedValue(0.5);
 
@@ -63,12 +56,6 @@ export function MatchCardSkeleton() {
   );
 }
 
-/**
- * Something went wrong and the user can do something about it.
- *
- * Every error the user actually sees should offer a way forward — a dead end
- * with an apology is worse than no message at all.
- */
 export function ErrorState({
   title = 'That didn’t work.',
   message,

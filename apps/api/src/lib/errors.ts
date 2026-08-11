@@ -49,8 +49,6 @@ export function errorHandler(
   err: unknown,
   _req: Request,
   res: Response,
-  // Express only treats a 4-arg function as error middleware, so `next` must
-  // stay in the signature even though it is unused.
   _next: NextFunction,
 ) {
   if (err instanceof ApiError) {

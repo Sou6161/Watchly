@@ -22,8 +22,6 @@ export default function Home() {
   const [active, setActive] = useState<ActiveSession[]>([]);
   const [reloadKey, setReloadKey] = useState(0);
 
-  // Refetch on focus, not just on mount: coming back from a finished session
-  // should show it in the list immediately, not after an app restart.
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -35,16 +33,12 @@ export default function Home() {
           setSessions(res.sessions);
           setHistoryFailed(false);
         } catch {
-          // History failing must never block the buttons — starting a session is
-          // the point of this screen, and it doesn't need the history to work.
           if (cancelled) return;
           setSessions([]);
           setHistoryFailed(true);
         }
       })();
 
-      // The watch-loop prompt, fetched independently so a slow or failed check
-      // never delays the history or the buttons — it's a bonus, not the screen.
       (async () => {
         try {
           const res = await api<WatchCheckResponse>('/api/sessions/watch-check');

@@ -17,33 +17,12 @@ export interface QueueFilters {
   minRating: number | null;
   /** Original-language ISO code (from the language rule). null = any language. */
   language: string | null;
-  /**
-   * Genres to gently favour in the shuffle (the player's learned taste). Unlike
-   * `genres`, this is NOT a filter — titles outside it still appear, just less
-   * often — so a taste-biased deck stays varied. Empty = no bias.
-   */
   tasteGenres: string[];
   limit: number;
 }
 
-/**
- * How much a taste-matching title's weight is multiplied in the shuffle. 2.5 is
- * deliberately gentle: enough that "you keep getting thrillers because you love
- * them" is felt, not so much that the deck turns into fifteen of the same thing.
- */
 const TASTE_WEIGHT = 2.5;
 
-/**
- * Builds the shuffled candidate pool for a session.
- *
- * Raw SQL rather than the Prisma query builder for three reasons the builder
- * can't express: the jsonb `?|` containment check against watchProviders, the
- * text[] overlap on genres, and weighted-random ordering.
- *
- * `excludeForUserIds` is the people in the session — a title either of them has
- * already swiped on recently is dropped for both, since re-showing it to one
- * person would desync the two queues.
- */
 export async function buildQueue(
   prisma: PrismaClient,
   filters: QueueFilters,
@@ -66,8 +45,6 @@ export async function buildQueue(
     // Movie night or series night — never a deck with both mixed in.
     Prisma.sql`t.type = ${titleType}::"TitleType"`,
 
-    // Streamable in this region on at least one service the user pays for.
-    // `?|` asks: does this jsonb array share any element with the given text[]?
     Prisma.sql`t."watchProviders" -> ${region} -> 'flatrate' ?| ${services}::text[]`,
   ];
 
@@ -76,24 +53,14 @@ export async function buildQueue(
     conditions.push(Prisma.sql`t.genres && ${genres}::text[]`);
   }
 
-  // Movies only. A series' runtime is per-EPISODE, so "under 100 min" would be
-  // satisfied by a 62-episode show — the opposite of what someone asking for
-  // something short wants. The client doesn't offer the filter for TV; this guard
-  // makes it true regardless of what the client sends.
   if (maxRuntime !== null && titleType === 'MOVIE') {
-    // Titles with unknown runtime are excluded when the user asked for something
-    // short — showing a possible 3-hour epic under "Under 100 min" breaks trust.
     conditions.push(Prisma.sql`t.runtime IS NOT NULL AND t.runtime <= ${maxRuntime}`);
   }
 
-  // Era rule: released no earlier than this year. Unknown release year is dropped
-  // rather than gambled on — "New" must not smuggle in an undated title.
   if (minYear !== null) {
     conditions.push(Prisma.sql`t."releaseYear" IS NOT NULL AND t."releaseYear" >= ${minYear}`);
   }
 
-  // Quality rule: a rating floor. An unrated title can't clear a bar it has no
-  // score for, so it's excluded when the user asks for well-reviewed only.
   if (minRating !== null) {
     conditions.push(Prisma.sql`t.rating IS NOT NULL AND t.rating >= ${minRating}`);
   }
@@ -118,25 +85,11 @@ export async function buildQueue(
 
   const where = Prisma.join(conditions, ' AND ');
 
-  /**
-   * Each row's sampling weight. Base is popularity; if the player has a learned
-   * taste, titles sharing one of their favourite genres get their weight
-   * multiplied, so they surface more often WITHOUT being the only thing shown.
-   * With no taste history this is just popularity — identical to before.
-   */
   const weight =
     tasteGenres.length > 0
       ? Prisma.sql`GREATEST(t.popularity, 0.01) * (CASE WHEN t.genres && ${tasteGenres}::text[] THEN ${TASTE_WEIGHT} ELSE 1 END)`
       : Prisma.sql`GREATEST(t.popularity, 0.01)`;
 
-  /**
-   * Weighted shuffle (Efraimidis–Spirakis): ordering by -ln(random()) / weight
-   * draws a sample without replacement where each row's chance is proportional to
-   * its weight. A plain ORDER BY random() over thousands of titles would mostly
-   * surface obscure ones; ordering by weight alone would show the same fifteen
-   * cards every night. This gives a fresh deck that leans recognisable — and, with
-   * taste weighting, leans toward what this person actually likes.
-   */
   return prisma.$queryRaw<Title[]>`
     SELECT t.*
     FROM "Title" t
