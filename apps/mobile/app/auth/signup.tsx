@@ -43,7 +43,7 @@ export default function Signup() {
   return (
     <Screen>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={s.flex}
       >
         <View style={s.header}>

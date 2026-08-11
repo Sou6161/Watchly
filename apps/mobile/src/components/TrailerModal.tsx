@@ -110,6 +110,14 @@ export function TrailerModal({ visible, videoIds, title, onClose }: Props) {
                   initialPlayerParams={{ controls: true, modestbranding: true, rel: false }}
                   forceAndroidAutoplay
                   onReady={() => setReady(true)}
+                  // onReady fires once per player instance, not once per video —
+                  // switching trailers reloads the video inside the SAME player,
+                  // so onReady never fires again and the spinner was stuck forever
+                  // over an already-playing video. Any real state change (playing,
+                  // paused, buffering) is equally good proof the video is live.
+                  onChangeState={(state: string) => {
+                    if (state !== 'unstarted') setReady(true);
+                  }}
                   onFullScreenChange={onFullScreenChange}
                   onError={(e: string) => {
                     if (e === 'embed_not_allowed') setBlocked(true);

@@ -100,34 +100,39 @@ export default function Join() {
           </View>
         )}
 
-        <Pressable style={s.codeRow} onPress={() => inputRef.current?.focus()}>
-          {Array.from({ length: CODE_LENGTH }).map((_, i) => (
-            <View key={i} style={[s.charBox, i === code.length && s.charBoxActive]}>
-              <Text style={s.char}>{code[i] ?? ''}</Text>
-            </View>
-          ))}
-        </Pressable>
+        <View style={s.codeWrap}>
+          <View style={s.codeRow} pointerEvents="none">
+            {Array.from({ length: CODE_LENGTH }).map((_, i) => (
+              <View key={i} style={[s.charBox, i === code.length && s.charBoxActive]}>
+                <Text style={s.char}>{code[i] ?? ''}</Text>
+              </View>
+            ))}
+          </View>
 
-        {/* The real input is invisible: the six boxes above are just a prettier
-            rendering of it. One field, one keyboard, no per-box focus juggling. */}
-        <TextInput
-          ref={inputRef}
-          value={code}
-          onChangeText={(t) => {
-            const next = t.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
-            setCode(next);
-            if (next.length === CODE_LENGTH) {
-              Haptics.selectionAsync();
-              submit(next);
-            }
-          }}
-          style={s.hiddenInput}
-          autoCapitalize="characters"
-          autoCorrect={false}
-          autoFocus
-          keyboardType="visible-password"
-          maxLength={CODE_LENGTH}
-        />
+          {/* The real input is invisible but sized to cover the whole row — the
+              boxes above are just a prettier rendering of it. A 1x1 hidden input
+              looked right but some Android keyboards refuse to open for a
+              focused view that small/invisible; a real-sized overlay doesn't
+              have that problem. */}
+          <TextInput
+            ref={inputRef}
+            value={code}
+            onChangeText={(t) => {
+              const next = t.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
+              setCode(next);
+              if (next.length === CODE_LENGTH) {
+                Haptics.selectionAsync();
+                submit(next);
+              }
+            }}
+            style={s.hiddenInput}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            autoFocus
+            keyboardType="visible-password"
+            maxLength={CODE_LENGTH}
+          />
+        </View>
 
         <Pressable onPress={openScanner} style={s.scanLink}>
           <Text style={s.scanLinkText}>or scan their QR code</Text>
@@ -150,7 +155,8 @@ const s = StyleSheet.create({
   body: { flex: 1, justifyContent: 'center' },
   errorWrap: { marginTop: spacing.lg },
 
-  codeRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xl },
+  codeWrap: { marginTop: spacing.xl },
+  codeRow: { flexDirection: 'row', gap: spacing.sm },
   charBox: {
     flex: 1,
     aspectRatio: 0.78,
@@ -163,7 +169,9 @@ const s = StyleSheet.create({
   },
   charBoxActive: { borderColor: colors.red },
   char: { ...type.title, color: colors.gold },
-  hiddenInput: { position: 'absolute', opacity: 0, height: 1, width: 1 },
+  // Fills codeWrap exactly (codeRow, a normal in-flow sibling, establishes that
+  // size) — invisible, but a real tappable/focusable area, not a 1x1 dot.
+  hiddenInput: { ...StyleSheet.absoluteFillObject, opacity: 0 },
 
   scanLink: { alignSelf: 'center', marginTop: spacing.xl, padding: spacing.sm },
   scanLinkText: { ...type.body, color: colors.red },
