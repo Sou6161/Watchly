@@ -77,16 +77,6 @@ export default function Home() {
   return (
     <Screen>
       <View style={s.topBar}>
-        <Link href="/watchlist" asChild>
-          <Pressable hitSlop={12} style={{ marginRight: 16 }}>
-            <Text style={s.profileLink}>List</Text>
-          </Pressable>
-        </Link>
-        <Link href="/taste" asChild>
-          <Pressable hitSlop={12} style={{ marginRight: 16 }}>
-            <Text style={s.profileLink}>Taste</Text>
-          </Pressable>
-        </Link>
         <Link href="/profile" asChild>
           <Pressable hitSlop={12}>
             <Text style={s.profileLink}>Profile</Text>
@@ -137,12 +127,15 @@ export default function Home() {
             onPress={() => router.push('/session/join')}
             variant="ghost"
           />
-          {/* The lazy-night escape hatch: one pick, no swiping. */}
-          <Button
-            label="🎲  Surprise us"
-            onPress={() => router.push('/surprise')}
-            variant="ghost"
-          />
+        </View>
+
+        {/* The rest of the app, in one glance — these used to be small text
+            links buried in the top bar, easy to never notice. */}
+        <View style={s.quickLinks}>
+          <QuickLink emoji="🎲" label="Surprise" onPress={() => router.push('/surprise')} />
+          <QuickLink emoji="🤔" label="On the fence" onPress={() => router.push('/watchlist')} />
+          <QuickLink emoji="🎭" label="Taste" onPress={() => router.push('/taste')} />
+          <QuickLink emoji="🕰️" label="Nights" onPress={() => router.push('/nights')} />
         </View>
 
         {active.length > 0 && (
@@ -208,6 +201,29 @@ export default function Home() {
   );
 }
 
+function QuickLink({
+  emoji,
+  label,
+  onPress,
+}: {
+  emoji: string;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [s.quickLink, pressed && s.quickLinkPressed]}
+    >
+      <Text style={s.quickLinkEmoji}>{emoji}</Text>
+      <Text style={s.quickLinkLabel} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 /** An open async night: "waiting on them", or "your turn" if you left cards unswiped. */
 function ActiveRow({ active, onPress }: { active: ActiveSession; onPress: () => void }) {
   const { partnerLabel, progress, yourTurn, waitingOnPartner } = active;
@@ -257,6 +273,21 @@ const s = StyleSheet.create({
   serviceLabel: { ...type.caption, color: colors.textMuted },
 
   actions: { gap: spacing.sm, marginTop: spacing.xl },
+
+  quickLinks: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xl },
+  quickLink: {
+    flex: 1,
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  quickLinkPressed: { opacity: 0.75 },
+  quickLinkEmoji: { fontSize: 20 },
+  quickLinkLabel: { ...type.caption, color: colors.textMuted, fontSize: 11 },
 
   active: { marginTop: spacing.xxl },
   activeRow: {
