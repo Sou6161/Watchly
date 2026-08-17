@@ -79,8 +79,10 @@ export default function Home() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.content}>
-        <Heading>Evening, {user.displayName}.</Heading>
-        <Subheading>Two people, fifteen trailers, one decision.</Subheading>
+        <Heading>
+          {greeting()}, {user.displayName}.
+        </Heading>
+        <Subheading>Two people, one deck, one decision.</Subheading>
 
         {watchCheck && (
           <View style={s.watchCheck}>
@@ -195,6 +197,20 @@ export default function Home() {
   );
 }
 
+/**
+ * Time-appropriate greeting, from the device's local clock. Called during render
+ * rather than held in state — home re-renders on every focus (useFocusEffect
+ * refetches), so it stays correct without a timer ticking in the background.
+ */
+function greeting(now = new Date()): string {
+  const hour = now.getHours();
+  if (hour < 5) return 'Late night';
+  if (hour < 12) return 'Morning';
+  if (hour < 17) return 'Afternoon';
+  if (hour < 22) return 'Evening';
+  return 'Late night';
+}
+
 function QuickLink({
   emoji,
   label,
@@ -223,9 +239,9 @@ function ActiveRow({ active, onPress }: { active: ActiveSession; onPress: () => 
   const { partnerLabel, progress, yourTurn, waitingOnPartner } = active;
 
   const line = yourTurn
-    ? `Your turn — ${progress.personA >= progress.total ? partnerLabel : 'you'} still have cards`
+    ? 'Your turn — you still have cards'
     : waitingOnPartner
-      ? `Waiting on ${partnerLabel} to finish their 15`
+      ? `Waiting on ${partnerLabel} to finish their ${progress.total}`
       : `In progress with ${partnerLabel}`;
 
   return (
@@ -290,7 +306,7 @@ const s = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.md,
     borderRadius: radii.md,
-    backgroundColor: '#241640',
+    backgroundColor: colors.surfaceSolid,
     borderWidth: 1,
     borderColor: colors.gold,
     marginBottom: spacing.sm,

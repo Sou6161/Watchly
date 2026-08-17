@@ -117,7 +117,7 @@ const s = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.md,
     borderRadius: radii.md,
-    backgroundColor: '#241640',
+    backgroundColor: colors.surfaceSolid,
     borderWidth: 1,
     borderColor: colors.border,
     marginBottom: spacing.sm,
@@ -130,7 +130,7 @@ const s = StyleSheet.create({
   skelButton: { height: 44, borderRadius: radii.pill, marginTop: spacing.md },
 
   matchSkeleton: {
-    backgroundColor: '#241640',
+    backgroundColor: colors.surfaceSolid,
     borderRadius: radii.card,
     borderWidth: 1,
     borderColor: colors.border,

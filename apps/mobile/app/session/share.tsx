@@ -33,7 +33,7 @@ export default function ShareSession() {
   return (
     <Screen>
       <Animated.View entering={FadeIn.duration(400)} style={s.body}>
-        <Heading>Your fifteen are in.</Heading>
+        <Heading>Your picks are in.</Heading>
         <Subheading>Send {partnerLabel} the code. You&apos;ll have your matches the moment they finish theirs.</Subheading>
 
         <View style={s.qrWrap}>

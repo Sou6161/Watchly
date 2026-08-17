@@ -169,7 +169,7 @@ const s = StyleSheet.create({
   count: { ...type.body, color: colors.gold, marginTop: spacing.xl, marginBottom: spacing.md },
 
   match: {
-    backgroundColor: '#241640',
+    backgroundColor: colors.surfaceSolid,
     borderRadius: radii.card,
     borderWidth: 1,
     borderColor: colors.border,

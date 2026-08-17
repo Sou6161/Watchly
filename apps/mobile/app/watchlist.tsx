@@ -164,7 +164,7 @@ const s = StyleSheet.create({
   list: { marginTop: spacing.lg, gap: spacing.md },
 
   card: {
-    backgroundColor: '#241640',
+    backgroundColor: colors.surfaceSolid,
     borderRadius: radii.card,
     borderWidth: 1,
     borderColor: colors.border,

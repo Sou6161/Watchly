@@ -131,12 +131,16 @@ export default function Results() {
           </ScrollView>
 
           <View style={s.footer}>
-            {/* A fresh deck excludes everything just swiped, so this really is 15
+            {/* A fresh deck excludes everything just swiped, so these really are
                 new ones. Carry the mode across so separate-phone players aren't
                 dropped into a pass-the-phone session. */}
             <Button
-              label="Swipe 15 more"
-              onPress={() => router.replace(`/session/new?mode=${session.mode}`)}
+              label={`Swipe ${session.queueLength} more`}
+              onPress={() =>
+                router.replace(
+                  `/session/new?mode=${session.mode}&deckSize=${session.queueLength}`,
+                )
+              }
               variant="ghost"
             />
             <Button label="Call it a night" onPress={done} variant="ghost" />
@@ -158,8 +162,12 @@ export default function Results() {
         </View>
         <View style={s.footer}>
           <Button
-            label="Swipe 15 more"
-            onPress={() => router.replace(`/session/new?mode=${session.mode}`)}
+            label={`Swipe ${session.queueLength} more`}
+            onPress={() =>
+                router.replace(
+                  `/session/new?mode=${session.mode}&deckSize=${session.queueLength}`,
+                )
+              }
           />
           <Button label="Call it a night" onPress={done} variant="ghost" />
         </View>
@@ -387,7 +395,7 @@ const s = StyleSheet.create({
   emptyCopy: { ...type.body, color: colors.textMuted, marginTop: spacing.md },
 
   match: {
-    backgroundColor: '#241640',
+    backgroundColor: colors.surfaceSolid,
     borderRadius: radii.card,
     borderWidth: 1,
     borderColor: colors.border,

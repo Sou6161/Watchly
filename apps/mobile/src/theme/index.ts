@@ -15,6 +15,10 @@ export const colors = {
   /** Surfaces that sit on top of the gradient (inputs, cards, chips). */
   surface: 'rgba(255, 245, 225, 0.06)',
   surfaceActive: 'rgba(233, 69, 96, 0.16)',
+  /** Opaque card fill. Must NOT be translucent: Android draws elevation and
+   *  borders against the view's backing rect, so a see-through fill leaks a pale
+   *  box out past the rounded corners. */
+  surfaceSolid: '#241640',
   border: 'rgba(255, 245, 225, 0.12)',
   borderActive: '#E94560',
 

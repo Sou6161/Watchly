@@ -69,7 +69,9 @@ export default function Swipe() {
   if (!session) return null;
 
   if (phase === 'HANDOFF') {
-    return <Handoff name={session.personBLabel} onReady={startPersonB} />;
+    return (
+      <Handoff name={session.personBLabel} total={titles.length} onReady={startPersonB} />
+    );
   }
 
   if (phase === 'WAITING_FOR_PARTNER') {
@@ -174,7 +176,15 @@ function WaitingForPartner() {
   );
 }
 
-function Handoff({ name, onReady }: { name: string; onReady: () => void }) {
+function Handoff({
+  name,
+  total,
+  onReady,
+}: {
+  name: string;
+  total: number;
+  onReady: () => void;
+}) {
   const scale = useSharedValue(0.9);
   const lift = useSharedValue(20);
 
@@ -202,7 +212,7 @@ function Handoff({ name, onReady }: { name: string; onReady: () => void }) {
           <Text style={s.handoffEyebrow}>Pass the phone</Text>
           <Text style={s.handoffName}>{name}</Text>
           <Text style={s.handoffCopy}>
-            Same fifteen. No peeking at what they picked — that&apos;s the whole point.
+            The same {total}. No peeking at what they picked — that&apos;s the whole point.
           </Text>
         </Animated.View>
 

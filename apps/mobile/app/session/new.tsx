@@ -8,6 +8,7 @@ import {
   LANGUAGE_FILTERS,
   MOODS,
   RATING_FILTERS,
+  SESSION_QUEUE_SIZE,
   WATCH_KINDS,
   type WatchKind,
 } from '@watchly/shared';
@@ -21,7 +22,10 @@ import { colors, radii, spacing, type } from '../../src/theme';
 export default function NewSession() {
   const router = useRouter();
   const user = useUser();
-  const { mode } = useLocalSearchParams<{ mode: 'SAME_DEVICE' | 'MULTI_DEVICE' }>();
+  const { mode, deckSize: deckSizeParam } = useLocalSearchParams<{
+    mode: 'SAME_DEVICE' | 'MULTI_DEVICE';
+    deckSize?: string;
+  }>();
 
   const create = useSessionStore((s) => s.create);
   const connect = useSessionStore((s) => s.connect);
@@ -36,7 +40,12 @@ export default function NewSession() {
   const [era, setEra] = useState<string>('any');
   const [rating, setRating] = useState<string>('any');
   const [language, setLanguage] = useState<string>('any');
-  const [deckSize, setDeckSize] = useState<number>(15);
+  // Carried over from a "Swipe N more" tap so the button's promise is kept;
+  // anything not an offered size falls back to the default.
+  const [deckSize, setDeckSize] = useState<number>(() => {
+    const n = Number(deckSizeParam);
+    return (DECK_SIZES as readonly number[]).includes(n) ? n : SESSION_QUEUE_SIZE;
+  });
   const [personA, setPersonA] = useState(user?.displayName ?? 'Person A');
   const [personB, setPersonB] = useState('Person B');
   const [asyncMode, setAsyncMode] = useState(false);
@@ -84,7 +93,7 @@ export default function NewSession() {
         <Heading>Tonight&apos;s rules</Heading>
         <Subheading>
           {sameDevice
-            ? 'One phone, two people, fifteen trailers each.'
+            ? `One phone, two people, ${deckSize} trailers each.`
             : 'Two phones. Swipe at your own pace.'}
         </Subheading>
 

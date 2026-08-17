@@ -90,7 +90,7 @@ const s = StyleSheet.create({
   card: {
     padding: spacing.md,
     borderRadius: radii.card,
-    backgroundColor: '#241640',
+    backgroundColor: colors.surfaceSolid,
     borderWidth: 1,
     borderColor: colors.gold,
     marginBottom: spacing.lg,

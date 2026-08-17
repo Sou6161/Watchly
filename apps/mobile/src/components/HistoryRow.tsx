@@ -76,7 +76,7 @@ const s = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.md,
     borderRadius: radii.md,
-    backgroundColor: '#241640',
+    backgroundColor: colors.surfaceSolid,
     borderWidth: 1,
     borderColor: colors.border,
     marginBottom: spacing.sm,
